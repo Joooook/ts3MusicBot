@@ -80,11 +80,10 @@ class AudioBot:
             self.exec('play')
             return
         self.send("正在搜索中....")
+
         songs = self.api.search(args[0])
-        suggestions = self.api.suggest(args[0])
-        if songs == [] and suggestions:
-            self.send(f"没有搜到{args[0]}哦，建议你搜搜[b]{'，'.join(suggestions)}[b]")
-        elif songs:
+
+        if songs is not None and len(songs) > 0:
             song = songs[0]
             link = self.api.get_song(song['ID'])
             avatar = self.api.get_avatar(song['ID'])
@@ -95,19 +94,23 @@ class AudioBot:
             self.exec('bot', 'avatar', 'set', avatar)
             self.send(f"！！开始播放来自{singers}的{title}", color='green')
         else:
-            self.send(f"网络错误或者没有找到你要的歌内QAQ。", color='red')
+            if songs==[]:   # 如果结果为0个结果则触发suggest
+                suggestions = self.api.suggest(args[0])
+                if suggestions is not None and len(suggestions) > 0:    # 如果suggest结果为非空则发送建议
+                    self.send(f"没有搜到{args[0]}哦，建议你搜搜[b]{'，'.join(suggestions)}[b]")
+                    return
+            self.send(f"网络错误或者没有找到你要的歌内QAQ。", color='red')  #当歌曲搜索结果为None 或者 当suggest搜索结果为None 或者 歌曲搜索结果和suggest结果均为空列表时
         return
 
     def cmd_search(self, *args):
         self.send("正在搜索中....")
+
         if len(args) == 2:
             songs = self.api.search(args[0], page_size=args[1])
         else:
             songs = self.api.search(args[0])
-        suggestions = self.api.suggest(args[0])
-        if songs == [] and suggestions:
-            self.send(f"没有搜到{args[0]}哦，建议你搜搜[b]{'，'.join(suggestions)}[/b]")
-        elif songs:
+
+        if songs is not None and len(songs) > 0:
             infos = ["搜索到的结果如下内："]
             for song in songs:
                 info_str = f"ID：{song['ID']}  歌名：{song['title']}  歌手：{' '.join(singer['name'] for singer in song['singers'])}"
@@ -116,7 +119,13 @@ class AudioBot:
                 infos.append(info_str)
             self.send("[b]" + '\n'.join(infos) + "[/b]")
         else:
-            self.send(f"网络错误或者没有找到你要的歌内QAQ。", color='red')
+            if songs == []:  # 如果结果为0个结果则触发suggest
+                suggestions = self.api.suggest(args[0])
+                if suggestions is not None and len(suggestions) > 0:  # 如果suggest结果为非空则发送建议
+                    self.send(f"没有搜到{args[0]}哦，建议你搜搜[b]{'，'.join(suggestions)}[b]")
+                    return
+            self.send(f"网络错误或者没有找到你要的歌内QAQ。",
+                      color='red')  # 当歌曲搜索结果为None 或者 当suggest搜索结果为None 或者 歌曲搜索结果和suggest结果均为空列表时
         return
 
     def cmd_pause(self, *args):
