@@ -178,7 +178,7 @@ class AudioBot:
             return
         sender=args[0]
         msg=args[1]
-        response=self.chat_api.chat(f"{sender}: {msg}")
+        response=self.chat_api.chat(f"{sender}：{msg}")
         self.send(response)
         return
 
