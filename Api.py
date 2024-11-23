@@ -49,14 +49,16 @@ class Api:
             return suggestions
         return []
 
-    def get_info(self, song_id: int):
+    def get_info(self, song_id):
         get_info_url = self.url + f"/api/music/{self.type}/song"
         params = {"ID": song_id}
         try:
             rep = requests.get(get_info_url, params=params)
+            return rep.json()['data']
         except Exception as e:
             return None
-        return rep.json()['data']
+        return None
+
 
     def get_song(self, song_id: int, quality: int = 320, file_format: str = "mp3"):
         get_url = self.url + f"/api/music/{self.type}/url"
