@@ -7,11 +7,14 @@ from urllib.parse import urlencode
 
 import requests
 import ts3
+from openai import audio
 from ts3.query import TS3Connection, TS3TimeoutError
 from ts3.response import TS3Event
 
 from Api import Api
 from NeteaseApi import NeteaseApi
+from Pet import PetApi, PetInfo
+from data_structures.Sender import Sender
 
 # cmd_alias = {"我想听": "add", "我要听": "add", "跳转": "jump", "添加ID": "add_id", "添加": "add", "歌单": "info",
 #              "下一首": "next", "上一首": "previous", "播放ID": "add_id", "播放歌单": "play_list", "播放": "add",
@@ -32,12 +35,18 @@ cmd_alias = [{'command': 'add_id', 'alias': ["添加ID", "播放ID"], 'help':'�
              {'command': 'delete_list', 'alias': ["删除歌单"], 'help':'删除对应歌单ID', 'examples':["删除歌单13456"]},
              {'command': 'save_current_list', 'alias': ["保存歌单"], 'help':'保存当前播放歌单到新歌单', 'examples':["保存歌单"]},
             {'command': 'add', 'alias': ["播放", "添加"], 'help':'自动搜索歌曲并添加到当前歌单', 'examples':["播放Lemon", "添加Lemon"]},
+            {'command': 'pet_new', 'alias': ["创建宠物", "新建宠物"], 'help':'新建一只宠物。', 'examples':["创建宠物", "新建宠物"]},
+            {'command': 'pet_upgrade', 'alias': ["升级","宠物升级"], 'help':'宠物升级。', 'examples':["升级","宠物升级"]},
+            {'command': 'pet_show', 'alias': ["宠物", "我的宠物","查看宠物"], 'help':'查看宠物信息。', 'examples':["宠物", "我的宠物","查看宠物"]},
+            {'command': 'pet_delete', 'alias': ["删除宠物", "抛弃宠物"], 'help':'删除宠物。', 'examples':["删除宠物", "抛弃宠物"]},
+            {'command': 'pet_feed', 'alias': ["喂食", "喂食宠物","喂宠物"], 'help':'喂宠物。', 'examples':["喂食", "喂食宠物","喂宠物"]},
+            {'command': 'checkin', 'alias': ["签到"], 'help':'签到。', 'examples':["签到"]}
              ]
 
 
 class AudioBot:
-    def __init__(self, username, password, uid, bot_api, api: Api, host, port=10011):
-        self.uid = uid
+    def __init__(self, username, password, audio_bot_uid:str, bot_api, api: Api, host, port=10011):
+        self.audio_bot_uid = audio_bot_uid
         self.username = username
         self.password = password
         self.nickname = "mew~"
@@ -46,12 +55,17 @@ class AudioBot:
         self.api = api
         self.bot_api = bot_api
         self.chat_api = None
+        self.pet_api:PetApi = None
         self.netease_api: NeteaseApi = None
         self.conn: TS3Connection = None
         self.chat_enable = False
         self.ignore_users = ['serveradmin','ServerQuery','kpixaDUvjkJFc7BPXm1ULo5JR2M=']
-        self.executor=concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        self.threads=[]
+        self.sid=1
+        self.cid=1
+        self.targetmode = 3 #消息发送模式
+        self.timeout = 60 # 超时处理阈值，实际上这里是listen的轮数，所以和实际60秒有差别。
+        self.interval = 1 # listen间隔
+        self.previous_link = None
 
     def wait_event(self, timeout: int = 10):
         while True:
@@ -61,51 +75,77 @@ class AudioBot:
             if sender_uid not in self.ignore_users:
                 return event
 
-    def run(self):
+    def connect(self):
         if self.conn is None:
             self.conn = ts3.query.TS3Connection(self.host, self.port)
         else:
             self.conn.close()
             self.conn = ts3.query.TS3Connection(self.host, self.port)
-        listen_thread = self.executor.submit(self.listen)
-        update_thread = self.executor.submit(self.update)
-        self.threads.clear()
-        self.threads.append(listen_thread)
-        self.threads.append(update_thread)
-
-    def update(self):
-        print("update thread started.")
-        previous_link = None
-        while True:
-            time.sleep(1)
-            rep=self.exec("song")
-            if rep and rep.status_code == 200:
-                link = rep.json()['Link']
-                if previous_link != link:
-                    song_id = re.findall(r'ID=(\d+)&', link)[0]
-                    song = self.api.get_info(song_id)[0]
-                    self.update_bot(song)
-                    previous_link = link
-
-    def listen(self):
-        if self.conn is None:
-            return
-        print("listen thread started.")
         self.conn.login(client_login_name=self.username, client_login_password=self.password)
         self.conn.use(sid=1)
         self.conn.clientupdate(client_nickname=self.nickname)
         self.conn.send_keepalive()
+        return
+
+    def run(self):
+        self.connect()
+        self.listen()
+
+    def listen(self):
+        if self.conn is None:
+            return
+        print("listen started.")
         self.conn.servernotifyregister(event='textserver')
+        self.conn.servernotifyregister(event='textchannel')
+        count = 0
         while True:
             self.conn.send_keepalive()
             try:
-                event = self.wait_event(timeout=60)
+                self.update()
+                self.follow()
+                event = self.wait_event(timeout=self.interval)
                 self.handle(event)
-            except TS3TimeoutError:
-                self.timeout()
+            except Exception:
                 pass
+            count+=1
+            if count > self.timeout:
+                count = 0
+                self._timeout()
 
-    def timeout(self):
+    def follow(self):
+        """
+        为了接收到和音乐机器人同一频道下的消息，需要跟随音乐机器人移动
+        :return:
+        """
+        res = self.conn.clientgetids(cluid=self.audio_bot_uid)
+        if not res:
+            raise Exception('AudioBot Not Found.')
+        audio_bot_clid = res[0]['clid']
+        audio_bot_cid = self.conn.clientinfo(clid=audio_bot_clid)[0]['cid']
+        res = self.conn.whoami()
+        bot_clid = res[0]['client_id']
+        bot_cid = res[0]['client_channel_id']
+        self.cid = bot_cid
+        if bot_cid != audio_bot_cid:
+            self.conn.clientmove(cid=audio_bot_cid,clid=bot_clid)
+        return
+
+    def update(self):
+        """用于更新AudioBot的歌曲信息"""
+        rep = self.exec("song")
+        if rep and rep.status_code == 200:
+            link = rep.json()['Link']
+            if self.previous_link != link:
+                song_id = re.findall(r'ID=(\d+)&', link)[0]
+                song = self.api.get_info(song_id)[0]
+                title = song['title']
+                avatar = self.api.get_avatar(song['ID'])
+                singers = ' '.join(singer['name'] for singer in song['singers'])
+                self.exec('bot', 'description', 'set', f"！！正在播放来自{singers}的{title}")
+                self.exec('bot', 'avatar', 'set', avatar)
+                self.previous_link = link
+
+    def _timeout(self):
         if self.chat_enable:
             self.chat_enable = False
             self.send("那我先下线了喵~~")
@@ -116,8 +156,9 @@ class AudioBot:
         parsed_event = event.parsed[0]
         sender_name = parsed_event['invokername']
         sender_uid = parsed_event['invokeruid']
+        self.targetmode = parsed_event['targetmode']
+        sender = Sender(sender_name=sender_name, sender_uid=sender_uid)
         message: str = parsed_event['msg']
-        print(parsed_event)
         command = None
         alias = None
         for i in cmd_alias:
@@ -131,7 +172,7 @@ class AudioBot:
         if command is None and not self.chat_enable:
             return
         elif command is None and self.chat_enable:
-            self.cmd_chat(sender_name, message)
+            self.cmd_chat(sender, message)
             return
         else:
             args = message.strip(alias).strip().split(' ')
@@ -139,18 +180,18 @@ class AudioBot:
                 func = self.__getattribute__(f"cmd_{command}")
             except AttributeError:
                 return
-            func(sender_uid,*args)
+            func(sender,*args)
             return
 
     def send(self, msg: str, color: str = None):
-        targetmode = 3
-        target = 1
-        # targetmode=2
-        # target = 0
-        if color is None:
-            self.conn.sendtextmessage(targetmode=targetmode, target=target, msg=msg)
+        if int(self.targetmode) == 3:
+            target = self.sid
         else:
-            self.conn.sendtextmessage(targetmode=targetmode, target=target, msg=f"[color={color}]" + msg + "[/color]")
+            target = self.cid
+        if color is None:
+            self.conn.sendtextmessage(targetmode=self.targetmode, target=target, msg=msg)
+        else:
+            self.conn.sendtextmessage(targetmode=self.targetmode, target=target, msg=f"[color={color}]" + msg + "[/color]")
 
     def exec(self, *args):
         urlencoded_args = map(lambda x: urllib.parse.quote(x, encoding='UTF-8', safe=''), args)
@@ -160,13 +201,6 @@ class AudioBot:
         except Exception:
             return None
         return rep
-
-    def update_bot(self, song: dict):
-        title = song['title']
-        avatar = self.api.get_avatar(song['ID'])
-        singers = ' '.join(singer['name'] for singer in song['singers'])
-        self.exec('bot', 'description', 'set', f"！！正在播放来自{singers}的{title}")
-        self.exec('bot', 'avatar', 'set', avatar)
 
     def play_song(self, song: dict):
         try:
@@ -213,7 +247,7 @@ class AudioBot:
                 break
         return data
 
-    def cmd_play(self,sender_uid, *args):
+    def cmd_play(self,sender, *args):
         if args[0] == '':
             self.exec('play')
             return
@@ -232,7 +266,7 @@ class AudioBot:
                       color='red')  # 当歌曲搜索结果为None 或者 当suggest搜索结果为None 或者 歌曲搜索结果和suggest结果均为空列表时
         return
 
-    def cmd_play_id(self,sender_uid, *args):
+    def cmd_play_id(self,sender, *args):
         if args[0] == '':
             self.send("请跟上ID。")
             return
@@ -245,7 +279,7 @@ class AudioBot:
         self.play_song(info[0])
         return
 
-    def cmd_add_id(self,sender_uid, *args):
+    def cmd_add_id(self,sender, *args):
         if args[0] == '':
             self.send("请跟上ID。")
             return
@@ -262,7 +296,7 @@ class AudioBot:
             self.add_song(info[0])
         return
 
-    def cmd_search(self,sender_uid, *args):
+    def cmd_search(self,sender, *args):
         if args[0] == '':
             return
         self.send("正在搜索中....")
@@ -289,10 +323,10 @@ class AudioBot:
                       color='red')  # 当歌曲搜索结果为None 或者 当suggest搜索结果为None 或者 歌曲搜索结果和suggest结果均为空列表时
         return
 
-    def cmd_pause(self,sender_uid, *args):
+    def cmd_pause(self,sender, *args):
         self.exec('pause')
 
-    def cmd_info(self,sender_uid, *args):
+    def cmd_info(self,sender, *args):
         if args[0] == '':
             list_id = "当前"
             data = self.get_list_songs_info()
@@ -328,20 +362,20 @@ class AudioBot:
         self.send(song_list_str)
         return
 
-    def cmd_next(self,sender_uid, *args):
+    def cmd_next(self,sender, *args):
         self.exec('next')
 
-    def cmd_previous(self,sender_uid, *args):
+    def cmd_previous(self,sender, *args):
         self.exec('previous')
 
-    def cmd_help(self,sender_uid, *args):
+    def cmd_help(self,sender, *args):
         global cmd_alias
         help_str='[b][color=blue]食用方式[/color]\n'
         for command in cmd_alias:
             help_str += f"{command['help']}   功能：{command['command']}  指令：[color=green]{'，'.join(command['alias'])}[/color]  例子：{'，'.join(command['examples'])}\n"
         self.send(help_str)
 
-    def cmd_chat(self,sender_uid, *args):
+    def cmd_chat(self,sender, *args):
         if self.chat_api is None:
             self.send("聊天api未设置。")
             return
@@ -354,13 +388,12 @@ class AudioBot:
             return
         if len(args) < 2:
             return
-        sender = args[0]
-        msg = args[1]
-        response = self.chat_api.chat(f"{sender}：{msg}")
+        msg = args[0]
+        response = self.chat_api.chat(f"{sender.sender_name}：{msg}")
         self.send(response)
         return
 
-    def cmd_add(self,sender_uid, *args):
+    def cmd_add(self,sender, *args):
         if args[0] == '':
             self.exec('play')
             return
@@ -382,7 +415,7 @@ class AudioBot:
                           color='red')  # 当歌曲搜索结果为None 或者 当suggest搜索结果为None 或者 歌曲搜索结果和suggest结果均为空列表时
         return
 
-    def cmd_jump(self,sender_uid, *args):
+    def cmd_jump(self,sender, *args):
         if args[0] == '':
             return
         try:
@@ -401,23 +434,16 @@ class AudioBot:
         self.send(f"！！成功跳转到第{str(index + 1)}首歌", color='green')
         return
 
-    def cmd_clear(self,sender_uid, *args):
-        self.send("你确定要清空当前歌单吗？[是/否]")
-        try:
-            event = self.wait_event(timeout=5)
-        except TS3TimeoutError:
-            self.send("未执行操作。")
-            return
-        parsed_event = event.parsed[0]
-        message: str = parsed_event['msg']
-        if message.startswith("是"):
+    def cmd_clear(self,sender, *args):
+        res= self.confirm("你确定要清空当前歌单吗？")
+        if res:
             self.exec('clear')
             self.send("已为您清空歌单。")
         else:
             self.send("好的呢~")
         return
 
-    def cmd_play_list(self,sender_uid, *args):
+    def cmd_play_list(self,sender, *args):
         if args[0] == '':
             self.send("请输入歌单ID。")
             return
@@ -431,26 +457,19 @@ class AudioBot:
             self.send(f"未找到歌单QAQ。",color='red')
         return
 
-    def cmd_delete_list(self,sender_uid, *args):
+    def cmd_delete_list(self,sender, *args):
         if args[0] == '':
             self.send("请输入歌单ID。")
             return
-        self.send("你确定要删除该歌单吗？[是/否]")
-        try:
-            event = self.wait_event(timeout=5)
-        except TS3TimeoutError:
-            self.send("未执行操作。")
-            return
-        parsed_event = event.parsed[0]
-        message: str = parsed_event['msg']
-        if message.startswith("是"):
+        res = self.confirm("你确定要删除该歌单吗？")
+        if res:
             self.exec('list','delete', args[0])
             self.send("已为您删除歌单。")
         else:
             self.send("好的呢~")
         return
 
-    def cmd_list_list(self,sender_uid, *args):
+    def cmd_list_list(self,sender, *args):
         rep = self.exec('list', 'list')
         if rep is None:
             self.send("没有找到歌单或者网络错误QAQ", color='red')
@@ -462,16 +481,10 @@ class AudioBot:
         self.send(lists_info_str)
         return
 
-    def cmd_save_current_list(self,sender_uid, *args):
-        self.send("请输入要保存为的歌单名：")
-        try:
-            event = self.wait_event(timeout=10)
-        except TS3TimeoutError:
-            self.send("未执行操作。")
+    def cmd_save_current_list(self,sender, *args):
+        message: str = self.ask("请输入要保存为的歌单名")
+        if not message:
             return
-        parsed_event = event.parsed[0]
-        message: str = parsed_event['msg']
-
         rep = self.exec('list', 'list')
         if rep is None:
             self.send("没有找到歌单或者网络错误QAQ", color='red')
@@ -501,3 +514,140 @@ class AudioBot:
         self.send(f"成功导入歌曲到歌单ID：{new_list_id}  歌单名：{message}。")
         self.cmd_list_list()
         return
+
+    def cmd_pet_new(self,sender, *args):
+        if not self.check_pet_api():
+            return
+        if self.pet_api.have_pet(sender.sender_uid):
+            res=self.confirm("每个人只能创建一只宠物哦，是否要覆盖掉当前宠物？")
+            if not res:
+                self.send("好的呢")
+                return
+        msg = self.ask("请输入宠物描述（15秒内）",timeout=15)
+        if not msg:
+            return
+        self.send("生成中....")
+        pet_info : PetInfo = self.pet_api.new_pet(sender.sender_uid,msg)
+        if not pet_info:
+            self.send("创建宠物失败，请重试。",color='red')
+            return
+        self.send(f"创建宠物成功！恭喜{sender.sender_name}拥有了一只{pet_info.name}。")
+
+    def cmd_pet_upgrade(self,sender, *args):
+        if not self.check_pet_api():
+            return
+        if not self.pet_api.have_pet(sender.sender_uid):
+            self.send("你还没有宠物呢。")
+            return
+        if not self.pet_api.upgradable(sender.sender_uid):
+            self.send("你的宠物目前还不能升级呢。")
+            return
+        msg = self.ask("请输入技能描述（15秒内）",timeout=15)
+        if not msg:
+            return
+        self.send("生成技能中....")
+        skill = self.pet_api.upgrade_pet(sender.sender_uid,msg)
+        if not skill:
+            self.send("升级宠物失败，请重试。",color='red')
+            return
+        self.send(f"升级宠物成功！恭喜{sender.sender_name}的宠物获得了新技能{skill.name}。")
+
+    def cmd_pet_list(self,sender, *args):
+        if not self.check_pet_api():
+            return
+
+    def cmd_pet_feed(self,sender, *args):
+        if not self.check_pet_api():
+            return
+        if not self.pet_api.have_pet(sender.sender_uid):
+            self.send("你还没有宠物呢。")
+            return
+        res,reason = self.pet_api.feed_pet(sender.sender_uid)
+        if reason=="NoFood":
+            self.send("喂食失败！没有足够的食物。",color='red')
+        elif reason=="Full":
+            self.send("喂食失败！宠物还饱呢。",color='red')
+        elif reason == "LevelUp":
+            self.send("喂食成功！宠物升级！！！！！", color='green')
+        elif reason == "Success":
+            self.send("喂食成功！", color='green')
+
+    def cmd_pet_show(self,sender, *args):
+        if not self.check_pet_api():
+            return
+        if not self.pet_api.have_pet(sender.sender_uid):
+            self.send("你还没有宠物呢。")
+            return
+        pet_info = self.pet_api.show_pet(sender.sender_uid)
+        if pet_info is None:
+            self.send("您还没拥有任何宠物呢。",color='red')
+        skills_str='\n'.join([f'- 技能名称：{skill.name}  技能种类：{skill.type} 技能强度：{skill.capability}  技能描述：{skill.description}' for skill in pet_info.skills])
+        self.send(f"""[b][color=blue]宠物信息如下：[/color]
+宠物主人：{sender.sender_name}
+宠物姓名：{pet_info.name}
+等级：{pet_info.level}
+身高：{pet_info.height}
+体重：{pet_info.weight}
+种族：{pet_info.species}
+生命值：{pet_info.health}
+剩余升级次数：{pet_info.upgrade_times}
+库存食物：{pet_info.food_amount}
+上次喂食：{pet_info.last_feed.strftime("%Y-%m-%d %H:%M")}
+描述：{pet_info.description}
+技能列表：
+{skills_str}
+""")
+
+    def cmd_pet_delete(self,sender, *args):
+        if not self.check_pet_api():
+            return
+        if not self.pet_api.have_pet(sender.sender_uid):
+            self.send("你还没有宠物呢。")
+            return
+        confirm=self.confirm("你确定要删除你的宠物吗？")
+        if not confirm:
+            self.send("好的呢")
+            return
+        self.pet_api.delete_pet(sender.sender_uid)
+        self.send("删除成功。",color='green')
+        return
+
+    def cmd_checkin(self,sender, *args):
+        if not self.check_pet_api():
+            return
+        if not self.pet_api.have_pet(sender.sender_uid):
+            self.send("你还没有宠物呢。")
+            return
+        self.pet_api.add_food_pet(sender.sender_uid)
+        self.send("签到成功，获得1食物。")
+        return
+
+    def check_pet_api(self):
+        if self.pet_api is None:
+            self.send("宠物api未设置。")
+            return False
+        return True
+
+    def confirm(self, question:str, timeout:int=5) -> bool:
+        self.send(question+" [是/否]")
+        try:
+            event = self.wait_event(timeout=timeout)
+        except TS3TimeoutError:
+            self.send("未执行操作。")
+            return False
+        parsed_event = event.parsed[0]
+        message: str = parsed_event['msg']
+        if message.startswith("是"):
+            return True
+        return False
+
+    def ask(self, question:str, timeout:int=10) -> str:
+        self.send(question+" >")
+        try:
+            event = self.wait_event(timeout=timeout)
+        except TS3TimeoutError:
+            self.send("未执行操作。")
+            return ''
+        parsed_event = event.parsed[0]
+        message: str = parsed_event['msg']
+        return message.strip()
