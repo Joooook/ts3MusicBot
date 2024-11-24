@@ -3,7 +3,7 @@ from urllib.parse import urlencode
 import requests
 
 
-class Api:
+class MusicApi:
     def __init__(self, url, api_type):
         self.url = url
         self.type = api_type
@@ -23,7 +23,7 @@ class Api:
             try:
                 rep = requests.get(search_url, params=params)
                 break
-            except Exception as e:
+            except Exception:
                 continue
         if rep is None:
             return None
@@ -40,7 +40,7 @@ class Api:
             try:
                 rep = requests.get(suggest_url, params=params)
                 break
-            except Exception as e:
+            except Exception:
                 continue
         if rep is None:
             return None
@@ -55,10 +55,8 @@ class Api:
         try:
             rep = requests.get(get_info_url, params=params)
             return rep.json()['data']
-        except Exception as e:
+        except Exception:
             return None
-        return None
-
 
     def get_song(self, song_id: int, quality: int = 320, file_format: str = "mp3"):
         get_url = self.url + f"/api/music/{self.type}/url"
@@ -72,4 +70,4 @@ class Api:
 
 
 if __name__ == '__main__':
-    print(Api().search_get("陈奕迅"))
+    print(MusicApi("https://xxx.com","xxxx").search_get("陈奕迅"))
