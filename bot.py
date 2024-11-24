@@ -9,7 +9,7 @@ from ts3.query import TS3Connection, TS3TimeoutError
 from ts3.response import TS3Event
 
 from apis.muiscApi.MusicApi import MusicApi
-from NeteaseApi import NeteaseApi
+from apis.neteaseApi.NeteaseApi import NeteaseApi
 from apis.petApi.PetApi import PetApi, PetInfo, BattleResult
 from data_structures.Sender import Sender
 
