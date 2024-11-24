@@ -1,12 +1,14 @@
 import json
 import os.path
 import pickle
-from datetime import datetime, timedelta
-from enum import EnumType, Enum
-from typing import Dict, List
-import pytz
+import re
+from datetime import datetime
+from typing import Dict, List, Union
 from openai import OpenAI
 from pydantic import BaseModel
+
+from apis.petApi.Pet import Pet
+
 
 class GetPetResponse(BaseModel):
     name: str
@@ -33,20 +35,25 @@ class PetInfo(BaseModel):
     level : int
     upgrade_times : int
     food_amount : int
+    feed_times : int
     last_feed : datetime
     skills : List[Skill]
+
+class BattleResult(BaseModel):
+    winner : str
+    rounds : List[str]
 
 class PetApi:
     def __init__(self, api_key):
         self.api_key = api_key
         self.client = OpenAI(api_key=self.api_key,
                              base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
-        self.file_name = "pet_list.pickle"
+        self.file_name = "../../pet_list.pickle"
+        self.battle_wait: list[Pet]= []
         if os.path.exists(self.file_name):
             self.pet_dict=pickle.load(open(self.file_name, 'rb'))
         else:
-            self.pet_dict: Dict[str,Pet]={}
-
+            self.pet_dict: Dict[str, Pet]={}
 
     def get_response(self, messages):
         completion = self.client.chat.completions.create(model="qwen-plus", messages=messages)
@@ -78,7 +85,7 @@ class PetApi:
             response = GetPetResponse(**response)
         except Exception:
             return None
-        new_pet = Pet.create_pet(owner,response)
+        new_pet = Pet.create_pet(owner, response)
         self.pet_dict[owner]=new_pet
         self.save()
         return new_pet
@@ -116,7 +123,7 @@ class PetApi:
         self.save()
         return res,reason
 
-    def get_new_skill(self,owner,user_input) -> Skill:
+    def get_new_skill(self,owner,user_input) -> Union[Skill,None]:
         messages = [{
             "role": "system",
             "content": f"宠物的json格式基本信息如下{self.pet_dict[owner].get_info().model_dump_json()}",
@@ -138,8 +145,8 @@ class PetApi:
             return None
         return new_skill
 
-    def upgrade_pet(self,owner:str,user_input:str) -> Skill:
-        skill = self.get_new_skill(user_input)
+    def upgrade_pet(self,owner:str,user_input:str) -> Union[Skill,None]:
+        skill = self.get_new_skill(owner,user_input)
         if skill is None:
             return None
         pet=self.pet_dict[owner]
@@ -148,9 +155,39 @@ class PetApi:
         self.save()
         return skill
 
+    def battle_pet(self):
+        if not self.battle_wait:
+            return None
+        description = ''
+        for index,pet in enumerate(self.battle_wait):
+            description += f"第index: {index}只宠物：{pet.get_info().model_dump_json()}\n\n"
+        messages = [{
+            "role": "system",
+            "content": description,
+        }, {"role": "system", "content": """请模拟这些宠物回合制战斗，每回合描述以|分隔，回合数不大于12。请尽量让战斗过程曲折离奇包含战斗数值，最后一回合仅以[x]表示最终赢家（比如[1]表示宠物1获胜）。
+        请严格按照以下格式输出：
+        回合描述|回合描述|回合描述|回合描述|回合描述|[index]"""}]
+        try:
+            assistant_output = self.get_response(messages).choices[0].message.content
+            rounds = assistant_output.split('|')
+            winner_index = int(re.findall(r"\[(\d+)]",assistant_output)[0])
+            winner = self.battle_wait[winner_index].owner
+            result = BattleResult(winner=winner,rounds=rounds[:-1])
+        except Exception as e:
+            print(e)
+            return None
+        self.battle_wait.clear()
+        self.save()
+        return result
+
+    def battle_add_pet(self,owner:str):
+        if self.pet_dict[owner] in self.battle_wait:
+            return
+        self.battle_wait.append(self.pet_dict[owner])
+        return
 
     def save(self):
-        pickle.dump(self.pet_dict, open("pet_list.pickle", "wb"))
+        pickle.dump(self.pet_dict, open("../../pet_list.pickle", "wb"))
 
     def have_pet(self,owner):
         if owner in self.pet_dict.keys():
@@ -162,63 +199,5 @@ class PetApi:
         if self.pet_dict[owner].upgrade_times > 0:
             return True
         return False
-
-class Pet:
-    def __init__(self, owner:str, name:str, species:str, health:int, height:int, weight:int, description:str):
-        self.owner = owner
-        self.name = name
-        self.species = species
-        self.health = health
-        self.height = height
-        self.weight = weight
-        self.description = description
-        self.level = 0
-        self.upgrade_times = 0
-        self.food_amount = 0
-        self.feed_times = 0
-        self.last_feed = datetime.now(tz=pytz.timezone('Asia/Shanghai'))
-        self.skills=[Skill(name="小拳拳",type="攻击",capability=1,description="初始技能")]
-
-    def feed(self):
-        if self.food_amount == 0:
-            return False,"NoFood"
-        current_time = datetime.now(tz=pytz.timezone('Asia/Shanghai'))
-        if current_time - self.last_feed < timedelta(seconds=1):
-            return False,"Full"
-        self.food_amount -= 1
-        self.feed_times += 1
-        if self.feed_times >= self.level+1:
-            self.upgrade_times += 1
-            self.feed_times = 0
-            return True, "LevelUp"
-        return True,"Success"
-
-    def upgrade(self):
-        if self.upgrade_times == 0:
-            return False, "NoTimes"
-        self.level += 1
-        self.upgrade_times -= 1
-        return True, "Success"
-
-    def get_info(self) -> PetInfo:
-        pet_info = PetInfo(
-            owner=self.owner,
-            name=self.name,
-            species=self.species,
-            health=self.health,
-            height=self.height,
-            weight=self.weight,
-            description=self.description,
-            upgrade_times=self.upgrade_times,
-            level=self.level,
-            food_amount=self.food_amount,
-            last_feed=self.last_feed,
-            skills=self.skills
-        )
-        return pet_info
-
-    @staticmethod
-    def create_pet(owner, response:GetPetResponse):
-        return Pet(owner=owner,name=response.name,species=response.species,health=response.health,height=response.height,weight=response.weight,description=response.description)
 
 
