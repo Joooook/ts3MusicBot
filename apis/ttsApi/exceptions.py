@@ -1,0 +1,2 @@
+class TTSApiException(Exception):
+    pass

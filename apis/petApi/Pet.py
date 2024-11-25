@@ -1,8 +1,29 @@
 from datetime import datetime, timedelta
+from typing import List
 
 import pytz
+from pydantic import BaseModel
+class Skill(BaseModel):
+    name: str
+    type: str
+    capability:int
+    description: str
 
-from apis.petApi.PetApi import Skill, PetInfo, GetPetResponse
+
+class PetInfo(BaseModel):
+    owner: str
+    name: str
+    species: str
+    description: str
+    health: int
+    height : int
+    weight: int
+    level : int
+    upgrade_times : int
+    food_amount : int
+    feed_times : int
+    last_feed : datetime
+    skills : List[Skill]
 
 
 class Pet:
@@ -61,5 +82,7 @@ class Pet:
         return pet_info
 
     @staticmethod
-    def create_pet(owner, response:GetPetResponse):
+    def create_pet(owner, response):
         return Pet(owner=owner,name=response.name,species=response.species,health=response.health,height=response.height,weight=response.weight,description=response.description)
+
+

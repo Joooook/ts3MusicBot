@@ -1,0 +1,2 @@
+class MusicApiException(Exception):
+    pass

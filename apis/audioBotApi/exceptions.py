@@ -1,0 +1,2 @@
+class AudioBotApiException(Exception):
+    pass

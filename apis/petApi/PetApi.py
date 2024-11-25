@@ -2,12 +2,11 @@ import json
 import os.path
 import pickle
 import re
-from datetime import datetime
 from typing import Dict, List, Union
 from openai import OpenAI
 from pydantic import BaseModel
 
-from apis.petApi.Pet import Pet
+from apis.petApi.Pet import Pet, Skill
 
 
 class GetPetResponse(BaseModel):
@@ -18,26 +17,6 @@ class GetPetResponse(BaseModel):
     height : int
     weight: int
 
-class Skill(BaseModel):
-    name: str
-    type: str
-    capability:int
-    description: str
-
-class PetInfo(BaseModel):
-    owner: str
-    name: str
-    species: str
-    description: str
-    health: int
-    height : int
-    weight: int
-    level : int
-    upgrade_times : int
-    food_amount : int
-    feed_times : int
-    last_feed : datetime
-    skills : List[Skill]
 
 class BattleResult(BaseModel):
     winner : str
