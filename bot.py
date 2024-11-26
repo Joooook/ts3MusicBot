@@ -7,7 +7,7 @@ import requests
 import ts3
 from ts3.query import TS3Connection, TS3TimeoutError
 from ts3.response import TS3Event
-
+import traceback
 from apis.audioBotApi.AudioBotApi import AudioBotApi
 from apis.chatApi.ChatApi import ChatApi
 from apis.muiscApi.MusicApi import MusicApi
@@ -15,8 +15,8 @@ from apis.muiscApi.data import Song, PlayList
 from apis.neteaseApi.NeteaseApi import NeteaseApi
 from apis.petApi.PetApi import PetApi, BattleResult
 from apis.petApi.Pet import PetInfo
+from apis.ttsApi.TTSApi import TTSApi
 from data_structures.Sender import Sender
-
 # cmd_alias = {"我想听": "add", "我要听": "add", "跳转": "jump", "添加ID": "add_id", "添加": "add", "歌单": "info",
 #              "下一首": "next", "上一首": "previous", "播放ID": "add_id", "播放歌单": "play_list", "播放": "add",
 #              "搜索": "search", "暂停": "pause", "怎么玩": "help", "帮助": "help", "聊天": "chat"}
@@ -64,7 +64,8 @@ cmd_alias = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应
              {'command': 'pet_battle_add', 'alias': ["加入战斗"], 'help': '宠物加入战斗。', 'examples': ["加入战斗"]},
              {'command': 'pet_battle_list', 'alias': ["查看战斗", "战斗"], 'help': '宠物战斗。', 'examples': ["战斗"]},
              {'command': 'pet_battle_start', 'alias': ["开始战斗"], 'help': '宠物开始战斗。', 'examples': ["开始战斗"]},
-             {'command': 'checkin', 'alias': ["签到"], 'help': '签到。', 'examples': ["签到"]}
+             {'command': 'checkin', 'alias': ["签到"], 'help': '签到。', 'examples': ["签到"]},
+              {'command': 'broadcast', 'alias': ["广播"], 'help': '广播。', 'examples': ["广播你好"]}
              ]
 
 
@@ -86,25 +87,30 @@ class AudioBot:
         self.chat_api: Union[ChatApi,None] = None
         self.pet_api: Union[PetApi,None] = None
         self.netease_api: Union[NeteaseApi,None] = None
+        self.tts_api: Union[TTSApi,None] = None
         self.conn: Union[TS3Connection,None] = None
         self.chat_enable = False
         self.ignore_users = ['serveradmin', 'ServerQuery', 'kpixaDUvjkJFc7BPXm1ULo5JR2M=']
         self.sid = 1 # server id
         self.cid = 1 # channel id
         self.targetmode = 3  # 消息发送模式
-        self.timeout = 60  # 超时处理阈值，实际上这里是listen的轮数，所以和实际60秒有差别。
         self.interval = 1  # listen间隔
+        self.timeout = 60 // self.interval  # 超时处理阈值，实际上这里是listen的轮数，所以和实际60秒有差别。
         self.previous_link = None
         self.prefix = "cmd_"
+        self.is_paused = False
 
     def wait_event(self, timeout: int = 10):
         """ 等待事件 """
         while True:
             event = self.conn.wait_for_event(timeout=timeout)
-            parsed_event = event.parsed[0]
-            sender_uid = parsed_event['invokeruid']
-            if sender_uid not in self.ignore_users:
-                return event
+            try:
+                parsed_event = event.parsed[0]
+                sender_uid = parsed_event['invokeruid']
+                if sender_uid not in self.ignore_users:
+                    return event
+            except KeyError as e:
+                pass
 
     def connect(self):
         print("connecting")
@@ -118,6 +124,10 @@ class AudioBot:
         self.conn.use(sid=1)
         self.conn.clientupdate(client_nickname=self.nickname)
         self.conn.send_keepalive()
+        self.conn.servernotifyregister(event='textserver')
+        self.conn.servernotifyregister(event='textchannel')
+        self.conn.gm(msg="Bot已上线")
+        # self.audio_bot_api.stop() # 是否需要上线清空歌单
         return
 
     def run(self):
@@ -128,23 +138,23 @@ class AudioBot:
         if self.conn is None:
             return
         print("listen started.")
-        self.conn.servernotifyregister(event='textserver')
-        self.conn.servernotifyregister(event='textchannel')
-        self.conn.gm(msg="Bot已上线")
         time_start = time.time()
         while True:
             self.conn.send_keepalive()
-            self.follow()
             try:
+                self.follow()
                 self.update()
                 event = self.wait_event(timeout=self.interval)
                 time_start = time.time() # 一旦有消息则重置
                 self.handle(event)
-            except Exception:
+            except TS3TimeoutError:
+                pass
+            except Exception as e:
+                traceback.print_exc()
                 pass
             if time.time() - time_start > self.timeout: # 长时间空闲处理逻辑
                 time_start = time.time()
-                self._timeout()
+                self.standby()
 
     def follow(self):
         """
@@ -154,39 +164,88 @@ class AudioBot:
         res = self.conn.clientgetids(cluid=self.audio_bot_uid)
         if not res[0]:
             raise Exception('AudioBotNotFound.')
-        audio_bot_clid = res[0]['clid']
-        audio_bot_cid = self.conn.clientinfo(clid=audio_bot_clid)[0]['cid']
-        res = self.conn.whoami()
-        bot_clid = res[0]['client_id']
-        bot_cid = res[0]['client_channel_id']
+        response = self.audio_bot_api.get_cid()
+        if not response.succeed:
+            return
+        audio_bot_cid = response.data
+        try:
+            res = self.conn.whoami()
+            bot_clid = res[0]['client_id']
+            bot_cid = res[0]['client_channel_id']
+        except Exception:
+            return
         self.cid = bot_cid
-        if bot_cid != audio_bot_cid:
+        if str(bot_cid) != str(audio_bot_cid):
             self.conn.clientmove(cid=audio_bot_cid, clid=bot_clid)
         return
 
-    def update(self):
-        """用于更新AudioBot的歌曲信息"""
+    def play_now(self):
+        # 获取api中的now，并播放
+        response = self.music_api.now()
+        if not response.succeed:
+            print(response.reason)
+            return
+        song = response.data
+        response = self.audio_bot_api.play(song.link)
+        if not response.succeed:
+            self.error(response.reason)
+            return
+        for _ in range(3):
+            response = self.audio_bot_api.is_playing()
+            if not response.succeed or response.data:
+                break
+            time.sleep(1)
+        return
+
+    def update_play(self):
+        response = self.audio_bot_api.is_playing()
+        if not response.succeed:
+            self.error(response.reason)
+            return
+        is_playing = response.data
+        if not is_playing:
+            print("未播放")
+            self.music_api.next()
+            self.play_now()
+        return
+
+    def update_info(self):
+        response = self.audio_bot_api.is_playing()
+        if not response.succeed:
+            return
+        is_playing = response.data
+        if not is_playing:
+            return
         response = self.audio_bot_api.get_song()
         if not response.succeed:
             return
         link = response.data['Link']
         if self.previous_link == link:
             return
-        song_id = re.findall(r'ID=(\d+)&', link)[0]
+        res = re.findall(r'ID=(\d+)&', link)
+        if not res:
+            return
+        song_id = res[0]
         response = self.music_api.get_songs(song_id)
         if not response.succeed:
             self.error(response.reason)
             return
         if not response.data:
             return
-        song:Song = response.data[0]
+        song: Song = response.data[0]
         avatar = self.music_api.get_avatar_link(song.id).data
         singers = ' '.join(singer.name for singer in song.singers)
         self.audio_bot_api.set_bot_description(f"！！正在播放来自{singers}的{song.name}")
         self.audio_bot_api.set_bot_avatar(avatar)
         self.previous_link = link
 
-    def _timeout(self):
+    def update(self):
+        """用于更新AudioBot的歌曲信息"""
+        self.update_play()
+        self.update_info()
+
+    def standby(self):
+        # 长时间未操作的处理函数
         if self.chat_enable:
             self.chat_enable = False
             self.send("那我先下线了喵~~")
@@ -246,73 +305,93 @@ class AudioBot:
     def warning(self, msg: str):
         self.send(msg, bold=True)
 
-    def new_play_song(self, song: Song):
+    def play_song(self, song: Song):
         link = self.music_api.get_song_link(song.id).data
         singers = ' '.join(singer.name for singer in song.singers)
         name = song.name
         response = self.audio_bot_api.play(link)
         if not response.succeed:
             self.error("播放错误QAQ")
+            return
         self.music_api.current_insert(song)
         self.success(f"！！开始播放来自{singers}的{name}")
         return
 
-    def new_add_song(self, song: Song):
-        link = self.music_api.get_song_link(song.id).data
+    def add_song(self, list_id: str, song: Song):
         singers = ' '.join(singer.name for singer in song.singers)
         name = song.name
-        response = self.audio_bot_api.add(link)
+        response = self.music_api.list_add(list_id,song)
         if not response.succeed:
-            self.error("播放错误QAQ")
-        self.music_api.current_add(song)
+            self.error(response.reason)
+            return
         self.success(f"！！添加{singers}的{name}到歌单。")
         return
-
-    # 弃用
-    def add_song_list(self, list_id: str, song: dict):
-        try:
-            link = self.music_api.get_song_link(song['ID']).data
-            singers = ' '.join(singer['name'] for singer in song['singers'])
-            title = song['title']
-            self.audio_bot_api.exec('list', 'add', list_id, link)
-            self.success(f"成功添加来自{singers}的{title}")
-        except Exception:
-            self.error("添加错误QAQ")
-        return
-
-    # 弃用
-    def get_list_songs_info(self, list_id: str = None):
-        if list_id is None:
-            command = ['info']
-        else:
-            command = ['list', 'show', list_id]
-        data = {'Items': []}
-        offset = 0
-        while True:
-            rep = self.audio_bot_api.exec(*(command + [str(offset), '20']))
-            if not rep.succeed:
-                return None
-            if list_id is None:
-                data['PlaybackIndex'] = rep.data.json()['PlaybackIndex']
-            data['Items'] += rep.data.json()['Items']
-            data['SongCount'] = rep.data.json()['SongCount']
-            data['Title'] = rep.data.json()['Title']
-            offset += 20
-            if len(data['Items']) >= data['SongCount']:
-                break
-        return data
 
     def default(self, sender, *args):
         if self.chat_enable:
             self.cmd_chat(sender, *args)
         return
 
+    def check_pet_api(self):
+        if self.pet_api is None:
+            self.info("宠物api未设置。")
+            return False
+        return True
+
+    def check_tts_api(self):
+        if self.tts_api is None:
+            self.info("TTSapi未设置。")
+            return False
+        return True
+
+    def confirm(self, sender:Sender, question: str, timeout: int = 5) -> bool:
+        message: str = self.ask(sender,question + "[是/否]",timeout=timeout)
+        if message.startswith("是"):
+            return True
+        return False
+
+    def ask(self, sender:Sender, question: str, timeout: int = 10) -> str:
+        self.info(question + " >")
+        event = None
+        time_start = time.time()
+        while time.time() - time_start < timeout:
+            try:
+                event = self.wait_event(timeout=1)
+                if event.parsed[0]['invokeruid'] == sender.sender_uid:
+                    break
+            except TS3TimeoutError:
+                continue
+        if not event:
+            self.info("未执行操作。")
+            return ''
+        parsed_event = event.parsed[0]
+        message: str = parsed_event['msg']
+        return message.strip()
+
+    def get_clid_from_uid(self, uid):
+        ids = self.conn.clientgetids(cluid=uid)[0]
+        if not ids:
+            return None
+        return ids[0]
+
+    def get_info_from_uid(self, uid):
+        clid = self.get_clid_from_uid(uid)
+        if not clid:
+            return None
+        return self.conn.clientinfo(clid=clid)[0]
+
+    def get_name_from_uid(self, uid):
+        name = self.conn.clientgetnamefromuid(cluid=uid)[0]
+        if not name:
+            return None
+        return name['name']
+
     def cmd_play(self, sender, *args):
         if args[0] == '':
             self.audio_bot_api.play()
             return
         self.info("正在搜索中....")
-        response = self.music_api.new_search_songs(args[0])
+        response = self.music_api.search_songs(args[0])
         if not response.succeed:
             self.error(response.reason)
             return
@@ -329,7 +408,7 @@ class AudioBot:
                 self.info("没有找到你想要的歌曲。")
         else:
             song = songs[0]
-            self.new_play_song(song)
+            self.play_song(song)
         return
 
     def cmd_play_id(self, sender, *args):
@@ -347,7 +426,7 @@ class AudioBot:
             self.info("没有找到对应ID的歌曲。")
         else:
             song = songs[0]
-            self.new_play_song(song)
+            self.play_song(song)
         return
 
     def cmd_add(self, sender, *args):
@@ -358,7 +437,7 @@ class AudioBot:
         keys: str = args[0]
         keys = keys.replace(',', '|').replace('，', '|')
         for key in keys.split('|'):
-            response = self.music_api.new_search_songs(key)
+            response = self.music_api.search_songs(key)
             if not response.succeed:
                 self.error(response.reason)
                 return
@@ -375,7 +454,7 @@ class AudioBot:
                     self.info("没有找到你想要的歌曲。")
             else:
                 song = songs[0]
-                self.new_add_song(song)
+                self.add_song(self.music_api.current_list_id,song)
         return
 
     def cmd_add_id(self, sender, *args):
@@ -396,7 +475,7 @@ class AudioBot:
                 self.info("没有找到对应ID的歌曲。")
             else:
                 song = songs[0]
-                self.new_add_song(song)
+                self.add_song(self.music_api.current_list_id,song)
         return
 
     def cmd_search(self, sender, *args):
@@ -410,9 +489,9 @@ class AudioBot:
             except ValueError:
                 self.error("请输入正确的数字。")
                 return
-            response = self.music_api.new_search_songs(args[0], page_size=size)
+            response = self.music_api.search_songs(args[0], page_size=size)
         else:
-            response = self.music_api.new_search_songs(args[0])
+            response = self.music_api.search_songs(args[0])
         if not response.succeed:
             self.error(response.reason)
             return
@@ -440,7 +519,6 @@ class AudioBot:
         self.audio_bot_api.pause()
 
     def cmd_show_list(self, sender, *args):
-        # todo: 要修改playlist api
         if args[0] == '':
             list_id = "当前"
             response = self.music_api.current_show()
@@ -486,7 +564,10 @@ class AudioBot:
             return
         msg = args[0]
         response = self.chat_api.chat(f"{sender.sender_name}：{msg}")
-        self.send(response)
+        if not response.succeed:
+            self.error(response.reason)
+            return
+        self.send(response.data)
         return
 
     def cmd_next(self, sender, *args):
@@ -494,16 +575,15 @@ class AudioBot:
         if not response.succeed:
             self.error(response.reason)
             return
-        self.new_play_song(response.data)
+        self.play_now()
         return
 
     def cmd_previous(self, sender, *args):
         response = self.music_api.previous()
-        response = self.music_api.next()
         if not response.succeed:
             self.error(response.reason)
             return
-        self.new_play_song(response.data)
+        self.play_now()
         return
 
     def cmd_jump(self, sender, *args):
@@ -518,7 +598,7 @@ class AudioBot:
         if not response.succeed:
             self.error(response.reason)
             return
-        self.new_play_song(response.data)
+        self.play_now()
         return
 
     def cmd_clear(self, sender, *args):
@@ -528,37 +608,37 @@ class AudioBot:
             if not response.succeed:
                 self.error("清空歌单失败。")
                 return
+            self.audio_bot_api.clear()
             self.success("已为您清空歌单。")
         else:
             self.info("好的呢~")
         return
 
-
-    #改到这里了
     def cmd_play_list(self, sender, *args):
         if args[0] == '':
             self.info("请输入歌单ID。")
             return
-        rep = self.audio_bot_api.exec("list", "play", args[0]).data
-        if not rep:
-            self.error("网络错误请重试QAQ")
+        response = self.music_api.list_play(args[0])
+        if not response.succeed:
+            self.error(response.reason)
             return
-        if rep.status_code == 204:
-            self.success(f"！！开始播放歌单ID：{args[0]}")
-        else:
-            self.error(f"未找到歌单QAQ。")
+        self.play_now()
+        self.success(f"！！开始播放歌单ID：{args[0]}")
         return
 
     def cmd_delete_list(self, sender, *args):
         if args[0] == '':
             self.info("请输入歌单ID。")
             return
-        res = self.confirm(sender,"你确定要删除该歌单吗？")
-        if res:
-            self.audio_bot_api.exec('list', 'delete', args[0])
-            self.success("已为您删除歌单。")
-        else:
+        confirm = self.confirm(sender,"你确定要删除该歌单吗？")
+        if not confirm:
             self.info("好的呢~")
+            return
+        response = self.music_api.list_delete(args[0])
+        if not response.succeed:
+            self.error(response.reason)
+            return
+        self.success("已为您删除歌单。")
         return
 
     def cmd_remove_item_list(self, sender, *args):
@@ -569,13 +649,13 @@ class AudioBot:
             self.info("请输入歌曲序号。")
             return
         try:
-            index = str(int(args[1]) - 1)
+            index = int(args[1]) - 1
         except ValueError:
             self.error("参数不正确。")
             return
-        rep = self.audio_bot_api.exec('list', 'item', 'delete', args[0], index).data
-        if not rep or rep.status_code != 204:
-            self.error("删除失败。")
+        response = self.music_api.list_remove(args[0], index)
+        if not response.succeed:
+            self.error(response.reason)
             return
         self.success("删除成功！")
         return
@@ -587,26 +667,39 @@ class AudioBot:
         if args[1] == '':
             self.info("请输入歌曲名")
             return
-        lists = self.audio_bot_api.get_list_ids().data
-        if args[0] not in lists:
-            self.info("未找到歌单。")
+        list_id = args[0]
+        response = self.music_api.is_list_created(list_id)
+        if not response.succeed:
+            self.error(response.reason)
+            return
+        is_list_created = response.data
+        if not is_list_created:
+            self.error("未找到歌单。")
             return
         self.info("正在搜索中....")
         keys: str = args[1]
         keys = keys.replace(',', '|').replace('，', '|')
         for key in keys.split('|'):
-            songs = self.music_api.search_songs(key).data
-            if songs is not None and len(songs) > 0:
-                song = songs[0]
-                self.add_song_list(args[0], song)
+            response = self.music_api.search_songs(key)
+            if not response.succeed:
+                self.error(response.reason)
+                return
+            songs = response.data
+            if not songs:
+                response = self.music_api.get_suggest(key)
+                if not response.succeed:
+                    self.error(response.reason)
+                    return
+                suggestions = response.data
+                if suggestions:  # 如果suggest结果为非空则发送建议
+                    self.info(f"没有搜到{key}哦，建议你搜搜[b]{'，'.join(suggestions)}[b]")
+                    return
+                else:
+                    self.info("没有找到你想要的歌曲。")
+                    return
             else:
-                if songs == []:  # 如果结果为0个结果则触发suggest
-                    suggestions = self.music_api.get_suggest(args[0]).data
-                    if suggestions is not None and len(suggestions) > 0:  # 如果suggest结果为非空则发送建议
-                        self.send(f"没有搜到{args[0]}哦，建议你搜搜[b]{'，'.join(suggestions)}[b]")
-                        continue
-                self.error(
-                    f"网络错误或者没有找到你要的歌内QAQ。")  # 当歌曲搜索结果为None 或者 当suggest搜索结果为None 或者 歌曲搜索结果和suggest结果均为空列表时
+                song = songs[0]
+                self.add_song(list_id, song)
         return
 
     def cmd_add_id_item_list(self, sender, *args):
@@ -614,66 +707,59 @@ class AudioBot:
             self.info("请输入歌单ID。")
             return
         if args[1] == '':
-            self.info("请输入歌曲ID。")
+            self.info("请输入歌曲名")
             return
-        lists = self.audio_bot_api.get_list_ids().data
-        if args[0] not in lists:
-            self.info("未找到歌单。")
+        list_id = args[0]
+        response = self.music_api.is_list_created(list_id)
+        if not response.succeed:
+            self.error(response.reason)
+            return
+        is_list_created = response.data
+        if not is_list_created:
+            self.error("未找到歌单。")
             return
         self.info("正在搜索中....")
         keys: str = args[1]
         keys = keys.replace(',', '|').replace('，', '|')
-        print(keys)
         for key in keys.split('|'):
             song_id = re.sub(r'\D', '', key)
-            info = self.music_api.get_info(song_id).data
-            if not info:
-                self.error(f"网络错误或者没有找到你要的歌内QAQ。")
-                continue
-            self.add_song_list(args[0], info[0])
+            response = self.music_api.get_songs(song_id)
+            if not response.succeed:
+                self.error(response.reason)
+                return
+            songs = response.data
+            if not songs:
+                self.info("没有找到对应ID的歌曲。")
+            else:
+                song = songs[0]
+                self.add_song(list_id, song)
         return
 
     def cmd_list_list(self, sender, *args):
-        rep = self.audio_bot_api.exec('list', 'list').data
-        if rep is None:
-            self.error("没有找到歌单或者网络错误QAQ")
+        response = self.music_api.list_list()
+        if not response.succeed:
+            self.error(response.reason)
             return
-        lists = rep.json()
+        lists:dict[str,PlayList] = response.data
         lists_info_str = "[b][color=blue]所有歌单[/color][/b]\n"
-        for l in lists:
-            lists_info_str += f"[b]ID：{l['Id']}\t歌单名：{l['Title']}\t歌曲数量：{l['SongCount']}[/b]\n"
+        for playlist_id,playlist in lists.items():
+            lists_info_str += f"[b]ID：{playlist.id}\t歌曲数量：{len(playlist.songs)}[/b]\n"
         self.send(lists_info_str)
         return
 
     def cmd_save_current_list(self, sender, *args):
-        message: str = self.ask(sender,"请输入要保存为的歌单名")
-        if not message:
+        list_id: str = self.ask(sender,"请输入要保存为的歌单名")
+        if not list_id:
             return
-        rep = self.audio_bot_api.exec('list', 'list').data
-        print(rep.json())
-        if rep is None:
-            self.error("没有找到歌单或者网络错误QAQ")
+        response = self.music_api.list_create(list_id)
+        if not response.succeed:
+            self.error(response.reason)
             return
-        lists = rep.json()
-        list_ids = [l['Id'] for l in lists]
-        new_list_name = message
-        new_list_id = 0
-        while True:
-            if str(new_list_id) not in list_ids:
-                break
-            new_list_id += 1
-        rep = self.audio_bot_api.exec('list', "create", str(new_list_id), new_list_name).data
-        if not rep or rep.status_code != 204:
-            self.error("创建歌单失败。")
+        response = self.music_api.list_copy(self.music_api.current_list_id,list_id)
+        if not response.succeed:
+            self.error(response.reason)
             return
-        data = self.get_list_songs_info()
-        if not data:
-            self.error("出错了请重试...")
-        items = data['Items']
-        for item in items:
-            self.audio_bot_api.exec('list', 'add', str(new_list_id), item['Link'])
-            self.success(f"{item['Title']}成功导入。")
-        self.success(f"成功导入歌曲到歌单ID：{new_list_id}  歌单名：{message}。")
+        self.success(f"成功保存当前歌单到{list_id}歌单")
         self.cmd_list_list(sender)
         return
 
@@ -830,50 +916,23 @@ class AudioBot:
         self.success("签到成功，获得1食物。")
         return
 
-    def check_pet_api(self):
-        if self.pet_api is None:
-            self.info("宠物api未设置。")
-            return False
-        return True
-
-    def confirm(self, sender:Sender, question: str, timeout: int = 5) -> bool:
-        message: str = self.ask(sender,question + "[是/否]",timeout=timeout)
-        if message.startswith("是"):
-            return True
-        return False
-
-    def ask(self, sender:Sender, question: str, timeout: int = 10) -> str:
-        self.info(question + " >")
-        event = None
-        time_start = time.time()
-        while time.time() - time_start < timeout:
-            try:
-                event = self.wait_event(timeout=1)
-                if event.parsed[0]['invokeruid'] == sender.sender_uid:
-                    break
-            except TS3TimeoutError:
-                continue
-        if not event:
-            self.info("未执行操作。")
-            return ''
-        parsed_event = event.parsed[0]
-        message: str = parsed_event['msg']
-        return message.strip()
-
-    def get_clid_from_uid(self, uid):
-        ids = self.conn.clientgetids(cluid=uid)[0]
-        if not ids:
-            return None
-        return ids[0]
-
-    def get_info_from_uid(self, uid):
-        clid = self.get_clid_from_uid(uid)
-        if not clid:
-            return None
-        return self.conn.clientinfo(clid=clid)[0]
-
-    def get_name_from_uid(self, uid):
-        name = self.conn.clientgetnamefromuid(cluid=uid)[0]
-        if not name:
-            return None
-        return name['name']
+    def cmd_broadcast(self, sender, *args):
+        if not self.check_tts_api():
+            return
+        if not args[0]:
+            self.error("请输入广播内容。")
+            return
+        voice_id = "jlshim"
+        if len(args)==2:
+            voice_id = args[1]
+        response = self.audio_bot_api.is_playing()
+        if not response:
+            self.error(response.reason)
+            return
+        response = self.audio_bot_api.play(self.tts_api.get(args[0],voice_id=voice_id, volume=200,speed=10).data)
+        if not response.succeed:
+            self.error(response.reason)
+            return
+        self.success("广播中...")
+        time.sleep(1)
+        return
