@@ -1,25 +1,22 @@
 import re
 import time
-import urllib
+import traceback
 from typing import Union
-from urllib.parse import urlencode
-import requests
+
 import ts3
 from ts3.query import TS3Connection, TS3TimeoutError
 from ts3.response import TS3Event
-import traceback
+
 from apis.audioBotApi.AudioBotApi import AudioBotApi
 from apis.chatApi.ChatApi import ChatApi
 from apis.muiscApi.MusicApi import MusicApi
 from apis.muiscApi.data import Song, PlayList
 from apis.neteaseApi.NeteaseApi import NeteaseApi
-from apis.petApi.PetApi import PetApi, BattleResult
 from apis.petApi.Pet import PetInfo
+from apis.petApi.PetApi import PetApi, BattleResult
 from apis.ttsApi.TTSApi import TTSApi
 from data_structures.Sender import Sender
-# cmd_alias = {"我想听": "add", "我要听": "add", "跳转": "jump", "添加ID": "add_id", "添加": "add", "歌单": "info",
-#              "下一首": "next", "上一首": "previous", "播放ID": "add_id", "播放歌单": "play_list", "播放": "add",
-#              "搜索": "search", "暂停": "pause", "怎么玩": "help", "帮助": "help", "聊天": "chat"}
+
 cmd_alias = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应ID歌曲到当前歌单并播放',
               'examples': ["播放ID789798"]},
              {'command': 'add_id', 'alias': ["添加ID"], 'help': '添加对应ID歌曲到当前歌单',
@@ -49,7 +46,7 @@ cmd_alias = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应
               'examples': ["保存歌单"]},
              {'command': 'add', 'alias': ["添加"], 'help': '自动搜索歌曲并添加到当前歌单',
               'examples': ["添加Lemon"]},
-            {'command': 'play', 'alias': ["播放"], 'help': '自动搜索歌曲并插入到当前歌单并播放',
+             {'command': 'play', 'alias': ["播放"], 'help': '自动搜索歌曲并插入到当前歌单并播放',
               'examples': ["播放Lemon"]},
              {'command': 'pet_new', 'alias': ["创建宠物", "新建宠物"], 'help': '新建一只宠物。',
               'examples': ["创建宠物", "新建宠物"]},
@@ -65,7 +62,7 @@ cmd_alias = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应
              {'command': 'pet_battle_list', 'alias': ["查看战斗", "战斗"], 'help': '宠物战斗。', 'examples': ["战斗"]},
              {'command': 'pet_battle_start', 'alias': ["开始战斗"], 'help': '宠物开始战斗。', 'examples': ["开始战斗"]},
              {'command': 'checkin', 'alias': ["签到"], 'help': '签到。', 'examples': ["签到"]},
-              {'command': 'broadcast', 'alias': ["广播"], 'help': '广播。', 'examples': ["广播你好"]}
+             {'command': 'broadcast', 'alias': ["广播"], 'help': '广播。', 'examples': ["广播你好"]}
              ]
 
 
@@ -84,15 +81,15 @@ class AudioBot:
             self.audio_bot_uid = response.data
         else:
             raise Exception("AudioBot initialize failed.")
-        self.chat_api: Union[ChatApi,None] = None
-        self.pet_api: Union[PetApi,None] = None
-        self.netease_api: Union[NeteaseApi,None] = None
-        self.tts_api: Union[TTSApi,None] = None
-        self.conn: Union[TS3Connection,None] = None
+        self.chat_api: Union[ChatApi, None] = None
+        self.pet_api: Union[PetApi, None] = None
+        self.netease_api: Union[NeteaseApi, None] = None
+        self.tts_api: Union[TTSApi, None] = None
+        self.conn: Union[TS3Connection, None] = None
         self.chat_enable = False
         self.ignore_users = ['serveradmin', 'ServerQuery', 'kpixaDUvjkJFc7BPXm1ULo5JR2M=']
-        self.sid = 1 # server id
-        self.cid = 1 # channel id
+        self.sid = 1  # server id
+        self.cid = 1  # channel id
         self.targetmode = 3  # 消息发送模式
         self.interval = 1  # listen间隔
         self.timeout = 60 // self.interval  # 超时处理阈值，实际上这里是listen的轮数，所以和实际60秒有差别。
@@ -145,14 +142,14 @@ class AudioBot:
                 self.follow()
                 self.update()
                 event = self.wait_event(timeout=self.interval)
-                time_start = time.time() # 一旦有消息则重置
+                time_start = time.time()  # 一旦有消息则重置
                 self.handle(event)
             except TS3TimeoutError:
                 pass
             except Exception as e:
                 traceback.print_exc()
                 pass
-            if time.time() - time_start > self.timeout: # 长时间空闲处理逻辑
+            if time.time() - time_start > self.timeout:  # 长时间空闲处理逻辑
                 time_start = time.time()
                 self.standby()
 
@@ -320,7 +317,7 @@ class AudioBot:
     def add_song(self, list_id: str, song: Song):
         singers = ' '.join(singer.name for singer in song.singers)
         name = song.name
-        response = self.music_api.list_add(list_id,song)
+        response = self.music_api.list_add(list_id, song)
         if not response.succeed:
             self.error(response.reason)
             return
@@ -344,13 +341,13 @@ class AudioBot:
             return False
         return True
 
-    def confirm(self, sender:Sender, question: str, timeout: int = 5) -> bool:
-        message: str = self.ask(sender,question + "[是/否]",timeout=timeout)
+    def confirm(self, sender: Sender, question: str, timeout: int = 5) -> bool:
+        message: str = self.ask(sender, question + "[是/否]", timeout=timeout)
         if message.startswith("是"):
             return True
         return False
 
-    def ask(self, sender:Sender, question: str, timeout: int = 10) -> str:
+    def ask(self, sender: Sender, question: str, timeout: int = 10) -> str:
         self.info(question + " >")
         event = None
         time_start = time.time()
@@ -454,7 +451,7 @@ class AudioBot:
                     self.info("没有找到你想要的歌曲。")
             else:
                 song = songs[0]
-                self.add_song(self.music_api.current_list_id,song)
+                self.add_song(self.music_api.current_list_id, song)
         return
 
     def cmd_add_id(self, sender, *args):
@@ -475,7 +472,7 @@ class AudioBot:
                 self.info("没有找到对应ID的歌曲。")
             else:
                 song = songs[0]
-                self.add_song(self.music_api.current_list_id,song)
+                self.add_song(self.music_api.current_list_id, song)
         return
 
     def cmd_search(self, sender, *args):
@@ -602,7 +599,7 @@ class AudioBot:
         return
 
     def cmd_clear(self, sender, *args):
-        confirm = self.confirm(sender,"你确定要清空当前歌单吗？")
+        confirm = self.confirm(sender, "你确定要清空当前歌单吗？")
         if confirm:
             response = self.music_api.clear()
             if not response.succeed:
@@ -630,7 +627,7 @@ class AudioBot:
         if args[0] == '':
             self.info("请输入歌单ID。")
             return
-        confirm = self.confirm(sender,"你确定要删除该歌单吗？")
+        confirm = self.confirm(sender, "你确定要删除该歌单吗？")
         if not confirm:
             self.info("好的呢~")
             return
@@ -740,22 +737,22 @@ class AudioBot:
         if not response.succeed:
             self.error(response.reason)
             return
-        lists:dict[str,PlayList] = response.data
+        lists: dict[str, PlayList] = response.data
         lists_info_str = "[b][color=blue]所有歌单[/color][/b]\n"
-        for playlist_id,playlist in lists.items():
+        for playlist_id, playlist in lists.items():
             lists_info_str += f"[b]ID：{playlist.id}\t歌曲数量：{len(playlist.songs)}[/b]\n"
         self.send(lists_info_str)
         return
 
     def cmd_save_current_list(self, sender, *args):
-        list_id: str = self.ask(sender,"请输入要保存为的歌单名")
+        list_id: str = self.ask(sender, "请输入要保存为的歌单名")
         if not list_id:
             return
         response = self.music_api.list_create(list_id)
         if not response.succeed:
             self.error(response.reason)
             return
-        response = self.music_api.list_copy(self.music_api.current_list_id,list_id)
+        response = self.music_api.list_copy(self.music_api.current_list_id, list_id)
         if not response.succeed:
             self.error(response.reason)
             return
@@ -767,11 +764,11 @@ class AudioBot:
         if not self.check_pet_api():
             return
         if self.pet_api.have_pet(sender.sender_uid):
-            res = self.confirm(sender,"每个人只能创建一只宠物哦，是否要覆盖掉当前宠物？")
+            res = self.confirm(sender, "每个人只能创建一只宠物哦，是否要覆盖掉当前宠物？")
             if not res:
                 self.info("好的呢")
                 return
-        msg = self.ask(sender,"请输入宠物描述（15秒内）", timeout=15)
+        msg = self.ask(sender, "请输入宠物描述（15秒内）", timeout=15)
         if not msg:
             return
         self.info("生成中....")
@@ -790,7 +787,7 @@ class AudioBot:
         if not self.pet_api.upgradable(sender.sender_uid):
             self.info("你的宠物目前还不能升级呢。")
             return
-        msg = self.ask(sender,"请输入技能描述（15秒内）", timeout=15)
+        msg = self.ask(sender, "请输入技能描述（15秒内）", timeout=15)
         if not msg:
             return
         self.info("生成技能中....")
@@ -855,7 +852,7 @@ class AudioBot:
         if not self.pet_api.have_pet(sender.sender_uid):
             self.info("你还没有宠物呢。")
             return
-        confirm = self.confirm(sender,"你确定要删除你的宠物吗？")
+        confirm = self.confirm(sender, "你确定要删除你的宠物吗？")
         if not confirm:
             self.info("好的呢")
             return
@@ -923,13 +920,13 @@ class AudioBot:
             self.error("请输入广播内容。")
             return
         voice_id = "jlshim"
-        if len(args)==2:
+        if len(args) == 2:
             voice_id = args[1]
         response = self.audio_bot_api.is_playing()
         if not response:
             self.error(response.reason)
             return
-        response = self.audio_bot_api.play(self.tts_api.get(args[0],voice_id=voice_id, volume=200,speed=10).data)
+        response = self.audio_bot_api.play(self.tts_api.get(args[0], voice_id=voice_id, volume=200, speed=10).data)
         if not response.succeed:
             self.error(response.reason)
             return

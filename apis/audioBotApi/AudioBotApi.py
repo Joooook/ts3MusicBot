@@ -1,7 +1,6 @@
 import urllib.parse
-from typing import Any
+
 import requests
-from pydantic import BaseModel
 
 from apis.BaseApi import BaseApiResponse
 from apis.audioBotApi.exceptions import AudioBotApiException
@@ -21,7 +20,9 @@ def api(func):
             return AudioBotApiResponse.failure("NetworkError")
         except AudioBotApiException:
             return AudioBotApiResponse.failure("AudioBotError")
+
     return wrapper
+
 
 class AudioBotApi:
     def __init__(self, url, bot_id=0):
@@ -29,11 +30,11 @@ class AudioBotApi:
         self.bot_id = bot_id
 
     @api
-    def exec(self, *args, encode_all = True):
+    def exec(self, *args, encode_all=True):
         if encode_all:
             urlencoded_args = map(lambda x: urllib.parse.quote(x, encoding='UTF-8', safe=''), args)
         else:
-            urlencoded_args =map(lambda x: urllib.parse.quote(x, encoding='UTF-8'), args)
+            urlencoded_args = map(lambda x: urllib.parse.quote(x, encoding='UTF-8'), args)
         url = self.url + f"/api/bot/use/{self.bot_id}/(/" + '/'.join(urlencoded_args)
         rep = requests.get(url)
         return AudioBotApiResponse.success(rep)
@@ -57,7 +58,7 @@ class AudioBotApi:
         return AudioBotApiResponse.success()
 
     @api
-    def play(self, link: str=''):
+    def play(self, link: str = ''):
         response = self.exec("play", link)
         rep: requests.models.Response = response.data
         if rep.status_code != 204 and rep.status_code != 200:
@@ -89,8 +90,8 @@ class AudioBotApi:
         return AudioBotApiResponse.success()
 
     @api
-    def jump(self,index:int):
-        response = self.exec("jump",str(index))
+    def jump(self, index: int):
+        response = self.exec("jump", str(index))
         rep: requests.models.Response = response.data
         if rep.status_code != 204:
             return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
@@ -124,32 +125,30 @@ class AudioBotApi:
     def is_playing(self):
         response = self.exec("song")
         rep: requests.models.Response = response.data
-        if rep.status_code == 422 and rep.json()['ErrorCode']==10:
+        if rep.status_code == 422 and rep.json()['ErrorCode'] == 10:
             return AudioBotApiResponse.success(False)
-        elif rep.status_code == 200 and rep.json()['Length']==0.0:
+        elif rep.status_code == 200 and rep.json()['Length'] == 0.0:
             return AudioBotApiResponse.success(False)
-        elif rep.status_code == 200 :
+        elif rep.status_code == 200:
             return AudioBotApiResponse.success(True)
         return AudioBotApiResponse.failure("未能获取状态。")
 
-
     # 设置属性用set开头
     @api
-    def set_bot_avatar(self,link: str):
-        response = self.exec("bot","avatar","set",link)
+    def set_bot_avatar(self, link: str):
+        response = self.exec("bot", "avatar", "set", link)
         rep: requests.models.Response = response.data
         if rep.status_code != 204:
             return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
         return AudioBotApiResponse.success()
 
     @api
-    def set_bot_description(self,text: str):
-        response = self.exec("bot","description","set",text)
+    def set_bot_description(self, text: str):
+        response = self.exec("bot", "description", "set", text)
         rep: requests.models.Response = response.data
         if rep.status_code != 204:
             return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
         return AudioBotApiResponse.success()
-
 
     # 有返回数据的api请使用get开头。
 

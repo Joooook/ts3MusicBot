@@ -1,7 +1,6 @@
 import copy
 import json
 import os
-import re
 from urllib.parse import urlencode
 from typing import Dict, Union, List
 import requests
