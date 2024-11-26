@@ -1,0 +1,2 @@
+class ChatApiException(Exception):
+    pass

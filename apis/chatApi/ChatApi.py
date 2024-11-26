@@ -1,5 +1,25 @@
+import requests
 from openai import OpenAI
 
+from apis.BaseApi import BaseApiResponse
+from apis.chatApi.exceptions import ChatApiException
+
+
+class ChatApiResponse(BaseApiResponse):
+    pass
+
+def api(func):
+    def wrapper(*args, **kwargs) -> ChatApiResponse:
+        try:
+            return func(*args, **kwargs)
+        except requests.exceptions.RequestException:
+            return ChatApiResponse.failure("NetworkError")
+        except ChatApiException:
+            return ChatApiResponse.failure("ChatApiError")
+        except Exception as e:
+            return ChatApiResponse.failure(f"UnknownError: {type(e)} {e}")
+
+    return wrapper
 
 class ChatApi:
     def __init__(self, api_key):
@@ -19,17 +39,17 @@ class ChatApi:
         completion = self.client.chat.completions.create(model=self.model_type, messages=messages)
         return completion
 
-    def chat(self, user_input) -> str:
+    @api
+    def chat(self, user_input):
         self.messages.append({"role": "user", "content": user_input})
-        try:
-            assistant_output = self.get_response(self.messages).choices[0].message.content
-        except Exception:
-            return "似乎出现了一些网络错误喵~"
+        assistant_output = self.get_response(self.messages).choices[0].message.content
         self.messages.append({"role": "assistant", "content": assistant_output})
-        return assistant_output
+        return ChatApiResponse.success(assistant_output)
 
+    @api
     def reset(self):
         self.messages = self.default_messages
+        return ChatApiResponse.success()
 
 
 if __name__ == '__main__':
