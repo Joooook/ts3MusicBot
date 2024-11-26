@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import re
@@ -31,7 +32,7 @@ class MusicApi:
         self.type = api_type
         self.playlists_path='./playlists.json'
         self.current_list_id = 'current'
-        self.current_index = 0
+        self.current_index = -1
         self.playlists:Dict[str,PlayList] = {}
         self.init_playlists()
 
@@ -47,6 +48,7 @@ class MusicApi:
         return
 
     def save_playlists(self):
+        # 尽量只在对list进行操作的接口中执行
         data = {}
         for playlist_id,playlist in self.playlists.items():
             data[playlist_id] = json.loads(playlist.model_dump_json())
@@ -61,12 +63,27 @@ class MusicApi:
             song.album = Album(id=song_data['album']['ID'], name=song_data['album']['name'])
         return song
 
-
     @api
     def list_create(self, list_id: str):
         if list_id in self.playlists.keys():
             return MusicApiResponse.failure("歌单Id已存在。")
-        self.playlists[list_id] = PlayList(id=self.current_list_id, songs=[])
+        self.playlists[list_id] = PlayList(id=list_id, songs=[])
+        self.save_playlists()
+        return MusicApiResponse.success()
+
+    @api
+    def list_play(self, list_id: str):
+        if list_id not in self.playlists.keys():
+            return MusicApiResponse.failure("歌单未找到。")
+        self.current_copy(list_id)
+        self.current_index = 0
+        return MusicApiResponse.success()
+
+    @api
+    def list_copy(self, list_src: str,list_dst: str):
+        if list_src not in self.playlists.keys():
+            return MusicApiResponse.failure("歌单未找到。")
+        self.playlists[list_dst] = PlayList(id=list_dst,songs=self.playlists[list_src].songs)
         self.save_playlists()
         return MusicApiResponse.success()
 
@@ -75,6 +92,14 @@ class MusicApi:
         if list_id not in self.playlists.keys():
             return MusicApiResponse.failure("歌单未找到。")
         return MusicApiResponse.success(self.playlists[list_id])
+
+    @api
+    def list_list(self):
+        tmp_playlists = copy.copy(self.playlists)
+        tmp_playlists.pop(self.current_list_id)
+        if len(tmp_playlists.keys()) == 0:
+            return MusicApiResponse.failure("未创建任何歌单。")
+        return MusicApiResponse.success(tmp_playlists)
 
     @api
     def list_delete(self, list_id: str):
@@ -117,12 +142,26 @@ class MusicApi:
         return MusicApiResponse.success()
 
     @api
+    def list_clear(self, list_id: str):
+        if list_id not in self.playlists.keys():
+            return MusicApiResponse.failure("歌单未找到。")
+        self.playlists[list_id].songs.clear()
+        self.save_playlists()
+        return MusicApiResponse.success()
+
+    @api
     def is_list_empty(self, list_id: str):
         if list_id not in self.playlists.keys():
             return MusicApiResponse.failure("歌单未找到。")
         if len(self.playlists[list_id].songs) == 0:
-            return MusicApiResponse.success()
-        return MusicApiResponse.failure("Empty")
+            return MusicApiResponse.success(True)
+        return MusicApiResponse.success(False)
+
+    @api
+    def is_list_created(self, list_id: str):
+        if list_id not in self.playlists.keys():
+            return MusicApiResponse.success(False)
+        return MusicApiResponse.success(True)
 
     # @api
     # def list_remove(self, list_id: str, links: Union[int, list[int]]):
@@ -140,18 +179,7 @@ class MusicApi:
     #     return MusicApiResponse.success()
 
     @api
-    def search_songs_link(self, key: str, page_index: int = 1, page_size: int = 20):
-        response = self.search_songs(key=key, page_index=page_index, page_size=page_size)
-        if not response.succeed:
-            raise MusicApiException
-        songs = response.data
-        song_links = []
-        for song in songs:
-            song_links.append(self.get_song_link(song['ID']))
-        return song_links
-
-    @api
-    def new_search_songs(self, key: str, page_index: int = 1, page_size: int = 20, max_retries: int = 2):
+    def search_songs(self, key: str, page_index: int = 1, page_size: int = 20, max_retries: int = 2):
         search_url = self.url + f"/api/music/{self.type}/search"
         params = {"key": key, "pageIndex": page_index, "pageSize": page_size}
         rep = None
@@ -168,24 +196,6 @@ class MusicApi:
             songs=[]
             for song_data in data:
                 songs.append(self._gen_song(song_data))
-            return MusicApiResponse.success(songs)
-        return MusicApiResponse.success([])
-
-    @api
-    def search_songs(self, key: str, page_index: int = 1, page_size: int = 20, max_retries: int = 2):
-        search_url = self.url + f"/api/music/{self.type}/search"
-        params = {"key": key, "pageIndex": page_index, "pageSize": page_size}
-        rep = None
-        for _ in range(max_retries):
-            try:
-                rep = requests.get(search_url, params=params)
-                break
-            except Exception:
-                continue
-        if rep is None:
-            raise requests.exceptions.RequestException
-        if 'data' in rep.json()['data']:
-            songs = rep.json()['data']['data']
             return MusicApiResponse.success(songs)
         return MusicApiResponse.success([])
 
@@ -251,6 +261,10 @@ class MusicApi:
         return self.list_add(self.current_list_id, song)
 
     @api
+    def current_copy(self, list_id):
+        return self.list_copy(list_id, self.current_list_id)
+
+    @api
     def current_show(self):
         return self.list_show(self.current_list_id)
 
@@ -260,21 +274,21 @@ class MusicApi:
 
     @api
     def next(self):
-        if self.is_current_empty().succeed:
+        if self.is_current_empty().data:
             return MusicApiResponse.failure("当前歌单为空。")
         self.current_index = (self.current_index + 1) % len(self.playlists[self.current_list_id].songs)
         return self.now()
 
     @api
     def previous(self):
-        if self.is_current_empty().succeed:
+        if self.is_current_empty().data:
             return MusicApiResponse.failure("当前歌单为空。")
         self.current_index = (self.current_index - 1) % len(self.playlists[self.current_list_id].songs)
         return self.now()
 
     @api
     def jump(self,index:int):
-        if self.is_current_empty().succeed:
+        if self.is_current_empty().data:
             return MusicApiResponse.failure("当前歌单为空。")
         if index<0 or index >= len(self.playlists[self.current_list_id].songs):
             return MusicApiResponse.failure("索引超出范围。")
@@ -283,17 +297,19 @@ class MusicApi:
 
     @api
     def clear(self):
-        self.playlists[self.current_list_id].songs.clear()
+        self.list_clear(self.current_list_id)
         return MusicApiResponse.success()
 
     @api
     def now(self):
-        if self.is_current_empty().succeed:
+        if self.is_current_empty().data:
             return MusicApiResponse.failure("当前歌单为空。")
+        if self.current_index == -1 :
+            return MusicApiResponse.failure("还未开始播放。")
         return MusicApiResponse.success(self.playlists[self.current_list_id].songs[self.current_index])
 
 
 
 
 if __name__ == '__main__':
-    print(MusicApi("https://xxx.com","xxxx").search_songs_link("陈奕迅"))
+    print(MusicApi("https://xxx.com","xxxx").search_songs("陈奕迅"))
