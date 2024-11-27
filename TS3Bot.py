@@ -207,7 +207,6 @@ class TS3Bot:
         return
 
     def update_play(self):
-        # todo:有问题不会自动播放
         response = self.audio_bot_api.is_playing()
         if not response.succeed:
             self.error(response.reason)
