@@ -29,7 +29,7 @@ def api(func):
 class MusicApi(ABC):
     def __init__(self, url):
         self.url = url
-        self.playlists_path='./playlists.json'
+        self.playlists_path=f'./{self.__class__.__name__}_playlists.json'
         self.current_list_id = 'current'
         self.current_index = -1
         self.playlists:Dict[str,PlayList] = {}
@@ -156,6 +156,11 @@ class MusicApi(ABC):
         return MusicApiResponse.success(True)
 
     # 以下api需要根据不同的api调整。
+    @api
+    @abstractmethod
+    def available(self):
+        pass
+
     @api
     @abstractmethod
     def search_songs(self, key: str, size: int = 20, max_retries: int = 2):

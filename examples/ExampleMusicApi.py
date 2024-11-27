@@ -1,14 +1,9 @@
-import copy
-import json
-import os
 from urllib.parse import urlencode
 from typing import Dict, Union, List
 import requests
 
-from apis.BaseApi import BaseApiResponse
 from apis.muiscApi.MusicApi import MusicApiResponse, MusicApi
 from apis.muiscApi.data import PlayList, Song, Album, Singer
-from apis.muiscApi.exceptions import MusicApiException
 
 
 
@@ -27,6 +22,15 @@ class ExampleMusicApi(MusicApi):
         return song
 
     # 以下api需要根据不同的api调整。
+    def available(self):
+        response = self.search_songs("陈奕迅")
+        if not response.succeed:
+            return response
+        if not response.data:
+            return MusicApiResponse.failure("Unavailable")
+        return MusicApiResponse.success()
+
+
     def search_songs(self, key: str, size: int = 20, max_retries: int = 2) -> MusicApiResponse:
         search_url = self.url + f"/api/music/{self.type}/search"
         params = {"key": key, "pageIndex": 1, "pageSize": size}
