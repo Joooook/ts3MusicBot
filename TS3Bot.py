@@ -34,7 +34,7 @@ cmd_alias = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应
              {'command': 'next', 'alias': ["下一首"], 'help': '下一首', 'examples': ["下一首"]},
              {'command': 'previous', 'alias': ["上一首"], 'help': '上一首', 'examples': ["上一首"]},
              {'command': 'remove_item_list', 'alias': ["删除歌曲", "歌单删除"], 'help': '删除对应歌单ID的第x首歌',
-              'examples': ["删除歌单1 12"]},
+              'examples': ["歌单删除1 12"]},
              {'command': 'add_item_list', 'alias': ["歌单添加"], 'help': '给对应歌单ID添加歌曲',
               'examples': ["歌单添加0 爱情转移，天天"]},
              {'command': 'add_id_item_list', 'alias': ["歌单添加ID"], 'help': '给对应歌单ID添加歌曲ID',
@@ -50,6 +50,8 @@ cmd_alias = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应
               'examples': ["添加Lemon"]},
              {'command': 'play', 'alias': ["播放"], 'help': '自动搜索歌曲并插入到当前歌单并播放',
               'examples': ["播放Lemon"]},
+             {'command': 'remove_item_current', 'alias': ["删除"], 'help': '删除当前的第x首歌',
+              'examples': ["删除 12"]},
              {'command': 'pet_new', 'alias': ["创建宠物", "新建宠物"], 'help': '新建一只宠物。',
               'examples': ["创建宠物", "新建宠物"]},
              {'command': 'pet_upgrade', 'alias': ["升级", "宠物升级"], 'help': '宠物升级。',
@@ -289,7 +291,7 @@ class TS3Bot:
                 func = self.__getattribute__(f"{self.prefix}{command}")
             except AttributeError:
                 return
-            self.logger.info(f"Exec cmd_function: {func}, sender: {sender}, args: {args}.")
+            self.logger.info(f"Exec cmd_function: {func.__name__}, sender: {sender}, args: {args}.")
             func(sender, *args)
             return
 
@@ -318,7 +320,7 @@ class TS3Bot:
         self.send(msg, bold=True)
 
     def play_song(self, song: Song):
-        self.logger.info(f"Play {Song}")
+        self.logger.info(f"Play {song}")
         link = self.music_api.get_song_link(song.id).data
         singers = ' '.join(singer.name for singer in song.singers)
         name = song.name
@@ -331,7 +333,7 @@ class TS3Bot:
         return
 
     def add_song(self, list_id: str, song: Song):
-        self.logger.info(f"Add {Song}")
+        self.logger.info(f"Add {song}")
         singers = ' '.join(singer.name for singer in song.singers)
         name = song.name
         response = self.music_api.list_add(list_id, song)
@@ -690,6 +692,22 @@ class TS3Bot:
             self.error("参数不正确。")
             return
         response = self.music_api.list_remove(args[0], index)
+        if not response.succeed:
+            self.error(response.reason)
+            return
+        self.success("删除成功！")
+        return
+
+    def cmd_remove_item_current(self, sender, *args):
+        if args[0] == '':
+            self.info("请输入歌曲序号。")
+            return
+        try:
+            index = int(args[0]) - 1
+        except ValueError:
+            self.error("参数不正确。")
+            return
+        response = self.music_api.current_remove(index)
         if not response.succeed:
             self.error(response.reason)
             return
