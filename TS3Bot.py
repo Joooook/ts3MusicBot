@@ -137,7 +137,7 @@ class TS3Bot:
         self.conn.servernotifyregister(event='textchannel')
         self.logger.info("Broadcast hello message.")
         self.conn.gm(msg=self.hello)
-        # self.audio_bot_api.stop() # 是否需要上线清空歌单
+        self.audio_bot_api.clear() # 是否需要上线清空歌单
         return
 
     def run(self):
@@ -184,12 +184,12 @@ class TS3Bot:
             self.conn.send_keepalive()
             try:
                 self.follow()
-                self.update()
                 event = self.wait_event(timeout=self.interval)
                 time_start = time.time()  # 一旦有消息则重置
                 self.handle(event)
             except TS3TimeoutError:
-                pass
+                # update容易和handle冲突，比如当某首歌跳转之后但还没切换过来（因为AudioBot有一定的延迟），但是碰到update发现Bot处于未播放，于是切成下一首导致跳歌。所以把update安排在这，保证update调用之间一定有空隙。
+                self.update()
             except Exception as e:
                 self.logger.error("Listen error: ", traceback.format_exc())
                 pass
@@ -236,15 +236,8 @@ class TS3Bot:
         # =========================================
         response = self.audio_bot_api.play(link)
         if not response.succeed:
-
             self.logger.info(f"Play_now failed link: {link}")
             self.error(response.reason)
-            return
-        for _ in range(3):
-            response = self.audio_bot_api.is_playing()
-            if not response.succeed or response.data:
-                break
-            time.sleep(1)
         return
 
     def update_play(self):
@@ -255,23 +248,7 @@ class TS3Bot:
         is_playing = response.data
         if not is_playing:
             self.music_api.next()
-            response = self.music_api.now()
-            if not response.succeed:
-                return
-            song = response.data
-            # =========================================
-            # 获取歌曲链接
-            response = self.music_api.get_song_link(song.id)
-            if not response.succeed:
-                self.logger.info(f"Update error {response.reason}.")
-                return
-            link = response.data
-            # =========================================
-            self.logger.info(f"Update play {link}.")
-            response = self.audio_bot_api.play(link)
-            # 防止偶尔出现的跳歌问题。
-            if not response.succeed:
-                self.audio_bot_api.play(link)
+            self.play_now()
         return
 
     def update_info(self):
@@ -696,6 +673,7 @@ class TS3Bot:
             self.error(response.reason)
             return
         self.play_now()
+        self.success("切换到歌单下一首。")
         return
 
     def cmd_previous(self, sender, *args):
@@ -704,6 +682,7 @@ class TS3Bot:
             self.error(response.reason)
             return
         self.play_now()
+        self.success("切换到歌单上一首。")
         return
 
     def cmd_jump(self, sender, *args):
@@ -719,6 +698,7 @@ class TS3Bot:
             self.error(response.reason)
             return
         self.play_now()
+        self.success(f"跳转到歌单第{index+1}首。")
         return
 
     def cmd_volume(self, sender, *args):
