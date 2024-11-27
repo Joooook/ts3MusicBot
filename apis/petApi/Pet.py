@@ -52,6 +52,7 @@ class Pet:
         self.feed_times += 1
         if self.feed_times >= self.level+1:
             self.upgrade_times += 1
+            self.level += 1
             self.feed_times = 0
             return True, "LevelUp"
         return True,"Success"
@@ -59,7 +60,6 @@ class Pet:
     def upgrade(self):
         if self.upgrade_times == 0:
             return False, "NoTimes"
-        self.level += 1
         self.upgrade_times -= 1
         return True, "Success"
 
