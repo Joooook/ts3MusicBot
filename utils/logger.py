@@ -23,7 +23,7 @@ def init_logger(name:str="root"):
     log_filename = now.strftime(DEFAULT_LOG_NAME_FORMAT) + '.log'
     # 使用FileHandler输出到文件
     os.makedirs(DEFAULT_LOG_DIR, exist_ok=True)
-    fh = logging.FileHandler(os.path.join(DEFAULT_LOG_DIR, log_filename))
+    fh = logging.FileHandler(os.path.join(DEFAULT_LOG_DIR, log_filename),encoding='utf-8')
     fh.setFormatter(formatter)
     # 使用StreamHandler输出到屏幕
     ch = logging.StreamHandler()
