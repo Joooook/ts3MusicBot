@@ -25,7 +25,7 @@ from apis.muiscApi.MusicApi import MusicApi
 from apis.chatApi.ChatApi import ChatApi
 from apis.petApi.PetApi import PetApi
 from apis.ttsApi.TTSApi import TTSApi
-from bot import TS3Bot
+from TS3Bot import TS3Bot
 
 if __name__ == '__main__':
   bot_api = "http://xxx.xxx.xxx.xxx:58913"
