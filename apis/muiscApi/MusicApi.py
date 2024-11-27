@@ -190,6 +190,10 @@ class MusicApi(ABC):
         return self.list_add(self.current_list_id, song)
 
     @api
+    def current_remove(self, index: int):
+        return self.list_remove(self.current_list_id, index)
+
+    @api
     def current_copy(self, list_id):
         return self.list_copy(list_id, self.current_list_id)
 
