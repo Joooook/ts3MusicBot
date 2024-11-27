@@ -45,25 +45,42 @@ class AudioBotApi:
     def add(self, link: str):
         response = self.exec("add", link)
         rep: requests.models.Response = response.data
-        if rep.status_code != 204:
-            return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
-        return AudioBotApiResponse.success()
+        if rep.status_code == 204:
+            return AudioBotApiResponse.success()
+        elif rep.status_code == 200:
+            AudioBotApiResponse.failure(f"未找到资源：{link}")
+        return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
 
     @api
     def list_add(self, list_id: str, link: str):
         response = self.exec("list", "add", list_id, link)
         rep: requests.models.Response = response.data
-        if rep.status_code != 204:
-            return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
-        return AudioBotApiResponse.success()
+        if rep.status_code == 204:
+            return AudioBotApiResponse.success()
+        elif rep.status_code == 200:
+            AudioBotApiResponse.failure(f"未找到资源：{link}")
+        return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
 
     @api
     def play(self, link: str = ''):
         response = self.exec("play", link)
         rep: requests.models.Response = response.data
-        if rep.status_code != 204 and rep.status_code != 200:
-            return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
-        return AudioBotApiResponse.success()
+        if rep.status_code == 204:
+            return AudioBotApiResponse.success()
+        elif rep.status_code == 200:
+            AudioBotApiResponse.failure(f"未找到资源：{link}")
+        return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
+
+    @api
+    def volume(self, value: str= ''):
+        response = self.exec("volume", value)
+        rep: requests.models.Response = response.data
+        if rep.status_code == 204:
+            return AudioBotApiResponse.success()
+        elif rep.status_code == 200:
+            return AudioBotApiResponse.success(rep.json()['Value'])
+        return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
+
 
     @api
     def pause(self):
