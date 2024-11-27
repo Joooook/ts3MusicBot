@@ -1,11 +1,12 @@
 import re
 import time
 import traceback
-from typing import Union
+from typing import Union, List
 
 import ts3
 from ts3.query import TS3Connection, TS3TimeoutError
 from ts3.response import TS3Event
+from win32comext.adsi.demos.scp import logger
 
 from utils.logger import init_logger
 from apis.audioBotApi.AudioBotApi import AudioBotApi
@@ -66,18 +67,23 @@ cmd_alias = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应
              {'command': 'pet_battle_list', 'alias': ["查看战斗", "战斗"], 'help': '宠物战斗。', 'examples': ["战斗"]},
              {'command': 'pet_battle_start', 'alias': ["开始战斗"], 'help': '宠物开始战斗。', 'examples': ["开始战斗"]},
              {'command': 'checkin', 'alias': ["签到"], 'help': '签到。', 'examples': ["签到"]},
-             {'command': 'broadcast', 'alias': ["广播"], 'help': '广播。', 'examples': ["广播你好"]}
+             {'command': 'broadcast', 'alias': ["广播"], 'help': '广播。', 'examples': ["广播你好"]},
+             {'command': 'update_apis', 'alias': ["刷新接口"], 'help': '刷新接口状态。'},
+             {'command': 'show_apis', 'alias': ["接口"], 'help': '查看接口状态。'},
+            {'command': 'set_priority', 'alias': ["修改接口"], 'help': '修改接口优先级。', 'examples': ["修改接口 default 50"]}
              ]
 
-
 class TS3Bot:
-    def __init__(self, username, password, bot_api, api: MusicApi, host, port=10011, nickname="mew~"):
+    def __init__(self, username, password, bot_api, host, port=10011, nickname="mew~", api: MusicApi = None):
         self.username = username
         self.password = password
         self.nickname = nickname
         self.host = host
         self.port = port
         self.music_api = api
+        # music_apis用于多api管理。
+        self.music_apis:dict = {}
+        self.current_music_api = 0
         self.bot_api = bot_api
         self.audio_bot_api = AudioBotApi(bot_api)
         response = self.audio_bot_api.get_uid()
@@ -134,8 +140,40 @@ class TS3Bot:
         return
 
     def run(self):
+        if self.music_api:
+            self.register_music_api(self.music_api,"default")
+        self.check_apis_access()
+        self.update_music_api()
         self.connect()
         self.listen()
+
+    def register_music_api(self, music_api:MusicApi,api_id:str, priority:int = 100):
+        api_info = {"api": music_api,"id":api_id,"priority": priority, "accessibility": False}
+        self.music_apis[api_id]=api_info
+        self.logger.info(f"Register music api id: {api_id} priority: {priority}")
+
+    def check_apis_access(self):
+        self.logger.info("Check music apis access.")
+        for api_id,api_info in self.music_apis.items():
+            api:MusicApi=api_info['api']
+            response = api.available()
+            if not response.succeed:
+                self.music_apis[api_id]['accessibility']=False
+            else:
+                self.music_apis[api_id]['accessibility']=True
+        return
+
+    def update_music_api(self):
+        self.check_apis_access()
+        sorted_music_apis = sorted(self.music_apis.items(), key=lambda x:x[1]['priority'], reverse=True)
+        for api_id,api_info in sorted_music_apis:
+            if api_info['accessibility']:
+                if self.current_music_api != api_id:
+                    self.logger.info(f"Api switched to id: {api_id}.")
+                    self.music_api = api_info['api']
+                    self.current_music_api = api_id
+                break
+        return
 
     def listen(self):
         if self.conn is None:
@@ -224,6 +262,7 @@ class TS3Bot:
             # 获取歌曲链接
             response = self.music_api.get_song_link(song.id)
             if not response.succeed:
+                self.logger.info(f"update error {response.reason}.")
                 return
             link = response.data
             # =========================================
@@ -254,11 +293,14 @@ class TS3Bot:
 
     def update(self):
         """用于更新AudioBot的歌曲信息"""
+        if not self.music_api:
+            return
         self.update_play()
         self.update_info()
 
     def standby(self):
         # 长时间未操作进入standby状态
+        self.update_music_api()
         if self.chat_enable:
             self.chat_enable = False
             self.send("那我先下线了喵~~")
@@ -404,6 +446,44 @@ class TS3Bot:
         if not name:
             return None
         return name['name']
+
+    #========================================
+    # 有关接口的cmd
+
+    def cmd_show_apis(self, sender, *args):
+        api_info_str = "[b][color=blue]接口状态[/color]\n"
+        count = 1
+        for api_id,api_info in sorted(self.music_apis.items(), key=lambda x: x[1]['priority'], reverse=True):
+            api_info_str+=f"[{count}]\tId: {api_id}\tApiType: {api_info['api'].__class__.__name__}\tStatus: {'[color=green]Available[/color]' if api_info['accessibility'] else '[color=red]Unavailable[/color]'}\t"
+            if api_id == self.current_music_api:
+                api_info_str += "\t<=正在使用"
+            api_info_str+='\n'
+            count +=1
+        self.send(api_info_str)
+
+    def cmd_set_priority(self,sender, *args):
+        if args[0]=='':
+            self.send("请输入接口Id。")
+            return
+        if len(args)<2:
+            self.send("请输入需要修改的优先级大小。")
+            return
+        try:
+            priority = int(args[1])
+        except ValueError:
+            self.send("请输入数字。")
+            return
+        api_id = args[0]
+        if api_id not in self.music_apis:
+            self.error("未找到对应接口。")
+        self.music_apis[api_id]['priority'] = priority
+        self.success("修改成功。")
+
+    def cmd_update_apis(self,sender, *args):
+        self.update_music_api()
+        self.success("刷新接口成功。")
+        self.cmd_show_apis(sender)
+    # ========================================
 
     def cmd_play(self, sender, *args):
         if args[0] == '':
@@ -567,7 +647,11 @@ class TS3Bot:
         global cmd_alias
         help_str = '[b][color=blue]食用方式[/color]\n'
         for command in cmd_alias:
-            help_str += f"{command['help']}   功能：{command['command']}  指令：[color=green]{'，'.join(command['alias'])}[/color]  例子：{'，'.join(command['examples'])}\n"
+            if 'examples' in command.keys():
+                examples_str = '，'.join(command['examples'])
+            else:
+                examples_str = '，'.join(command['alias'])
+            help_str += f"{command['help']}\t功能：{command['command']}\t指令：[color=green]{'，'.join(command['alias'])}[/color]\t例子：{examples_str}\n"
         self.send(help_str)
 
     def cmd_chat(self, sender, *args):
