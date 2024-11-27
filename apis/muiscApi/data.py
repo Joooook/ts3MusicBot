@@ -11,7 +11,6 @@ class Album(BaseModel):
     id:str
 
 class Song(BaseModel):
-    link:str
     id:str
     name:str
     singers:List[Singer]
