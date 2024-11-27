@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+from abc import ABC, abstractmethod
 from urllib.parse import urlencode
 from typing import Dict, Union, List
 import requests
@@ -25,10 +26,9 @@ def api(func):
             return MusicApiResponse.failure(f"UnknownError: {type(e)} {e}")
     return wrapper
 
-class MusicApi:
-    def __init__(self, url, api_type):
+class MusicApi(ABC):
+    def __init__(self, url):
         self.url = url
-        self.type = api_type
         self.playlists_path='./playlists.json'
         self.current_list_id = 'current'
         self.current_index = -1
@@ -54,13 +54,6 @@ class MusicApi:
         with open(self.playlists_path, 'w') as f:
             f.write(json.dumps(data))
         return
-
-    def _gen_song(self,song_data):
-        song = Song(id=song_data['ID'], name=song_data['title'], link=self.get_song_link(song_data['ID']).data,
-                    singers=[Singer(id=singer['ID'], name=singer['name']) for singer in song_data['singers']])
-        if song_data['album']['ID'] != '0':
-            song.album = Album(id=song_data['album']['ID'], name=song_data['album']['name'])
-        return song
 
     @api
     def list_create(self, list_id: str):
@@ -162,94 +155,31 @@ class MusicApi:
             return MusicApiResponse.success(False)
         return MusicApiResponse.success(True)
 
-    # @api
-    # def list_remove(self, list_id: str, links: Union[int, list[int]]):
-    #     if list_id not in self.playlists.keys():
-    #         return MusicApiResponse.failure("歌单未找到")
-    #     if links is str:
-    #         links = [links]
-    #     ids = []
-    #     for link in links:
-    #         ids.append(re.findall(r"ID=(\d+)", link))
-    #     response = self.get_songs(ids)
-    #     if not response.succeed:
-    #         return response
-    #     self.playlists[list_id].songs.append(response.data)
-    #     return MusicApiResponse.success()
+    # 以下api需要根据不同的api调整。
+    @api
+    @abstractmethod
+    def search_songs(self, key: str, size: int = 20, max_retries: int = 2):
+        pass
 
     @api
-    def search_songs(self, key: str, page_index: int = 1, page_size: int = 20, max_retries: int = 2):
-        search_url = self.url + f"/api/music/{self.type}/search"
-        params = {"key": key, "pageIndex": page_index, "pageSize": page_size}
-        rep = None
-        for _ in range(max_retries):
-            try:
-                rep = requests.get(search_url, params=params)
-                break
-            except Exception:
-                continue
-        if rep is None:
-            raise requests.exceptions.RequestException
-        if 'data' in rep.json()['data']:
-            data = rep.json()['data']['data']
-            songs=[]
-            for song_data in data:
-                songs.append(self._gen_song(song_data))
-            return MusicApiResponse.success(songs)
-        return MusicApiResponse.success([])
-
-    @api
+    @abstractmethod
     def get_songs(self, ids:Union[str,list]):
-        if type(ids) is str:
-            ids=[ids]
-        url = self.url + f"/api/music/{self.type}/song"
-        params = {"ID": ','.join(ids)}
-        rep = requests.get(url, params=params)
-        data = rep.json()['data']
-        songs = []
-        for song_data in data:
-            song = self._gen_song(song_data)
-            songs.append(song)
-        return MusicApiResponse.success(songs)
-
-
+        pass
 
     @api
-    def get_suggest(self, key, max_retries: int = 2):
-        suggest_url = self.url + f"/api/music/{self.type}/searchsuggest"
-        params = {"key": key}
-        rep = None
-        for _ in range(max_retries):
-            try:
-                rep = requests.get(suggest_url, params=params)
-                break
-            except Exception:
-                continue
-        if rep is None:
-            raise requests.exceptions.RequestException
-        if 'search' in rep.json()['data']:
-            suggestions = rep.json()['data']['search']
-            return MusicApiResponse.success(suggestions)
-        return MusicApiResponse.success([])
+    @abstractmethod
+    def get_suggest(self, key):
+        pass
 
     @api
-    def get_info(self, song_id):
-        get_info_url = self.url + f"/api/music/{self.type}/song"
-        params = {"ID": song_id}
-        rep = requests.get(get_info_url, params=params)
-        return MusicApiResponse.success(rep.json()['data'])
+    @abstractmethod
+    def get_song_link(self, song_id: str, quality: int = 320, file_format: str = "mp3") -> MusicApiResponse:
+        pass
 
     @api
-    def get_song_link(self, song_id: str, quality: int = 320, file_format: str = "mp3"):
-        url = self.url + f"/api/music/{self.type}/url"
-        params = {"ID": song_id, "quality": quality, "format": file_format}
-        return MusicApiResponse.success(url + "?" + urlencode(params))
-
-    @api
-    def get_avatar_link(self, song_id: str, quality: int = 500, file_format: str = "jpg"):
-        url = self.url + f"/api/music/{self.type}/url"
-        params = {"ID": song_id, "quality": quality, "format": file_format}
-        return MusicApiResponse.success(url + "?" + urlencode(params))
+    @abstractmethod
+    def get_avatar_link(self, song_id: str, quality: int = 500, file_format: str = "jpg") -> MusicApiResponse:
+        pass
 
     @api
     def current_insert(self,song:Song):
@@ -311,4 +241,4 @@ class MusicApi:
 
 
 if __name__ == '__main__':
-    print(MusicApi("https://xxx.com","xxxx").search_songs("陈奕迅"))
+    print(MusicApi("https://xxx.com").search_songs("陈奕迅"))
