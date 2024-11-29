@@ -1,6 +1,6 @@
 import requests
 
-
+# 弃用
 class NeteaseApi:
     def __init__(self,host):
         self.host=host
