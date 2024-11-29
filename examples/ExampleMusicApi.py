@@ -2,7 +2,7 @@ from urllib.parse import urlencode
 from typing import Dict, Union, List
 import requests
 
-from apis.muiscApi.MusicApi import MusicApiResponse, MusicApi
+from apis.muiscApi.MusicApi import MusicApiResponse, MusicApi, api
 from apis.muiscApi.data import PlayList, Song, Album, Singer
 
 
@@ -22,6 +22,7 @@ class ExampleMusicApi(MusicApi):
         return song
 
     # 以下api需要根据不同的api调整。
+    @api
     def available(self):
         response = self.search_songs("陈奕迅")
         if not response.succeed:
@@ -30,7 +31,7 @@ class ExampleMusicApi(MusicApi):
             return MusicApiResponse.failure("Unavailable")
         return MusicApiResponse.success()
 
-
+    @api
     def search_songs(self, key: str, size: int = 20, max_retries: int = 2) -> MusicApiResponse:
         search_url = self.url + f"/api/music/{self.type}/search"
         params = {"key": key, "pageIndex": 1, "pageSize": size}
@@ -51,6 +52,7 @@ class ExampleMusicApi(MusicApi):
             return MusicApiResponse.success(songs)
         return MusicApiResponse.success([])
 
+    @api
     def get_songs(self, ids:Union[str,list]):
         if type(ids) is str:
             ids=[ids]
@@ -64,6 +66,7 @@ class ExampleMusicApi(MusicApi):
             songs.append(song)
         return MusicApiResponse.success(songs)
 
+    @api
     def get_suggest(self, key, max_retries: int = 2):
         suggest_url = self.url + f"/api/music/{self.type}/searchsuggest"
         params = {"key": key}
@@ -81,11 +84,13 @@ class ExampleMusicApi(MusicApi):
             return MusicApiResponse.success(suggestions)
         return MusicApiResponse.success([])
 
+    @api
     def get_song_link(self, song_id: str, quality: int = 320, file_format: str = "mp3"):
         url = self.url + f"/api/music/{self.type}/url"
         params = {"ID": song_id, "quality": quality, "format": file_format}
         return MusicApiResponse.success(url + "?" + urlencode(params))
 
+    @api
     def get_avatar_link(self, song_id: str, quality: int = 500, file_format: str = "jpg"):
         url = self.url + f"/api/music/{self.type}/url"
         params = {"ID": song_id, "quality": quality, "format": file_format}
