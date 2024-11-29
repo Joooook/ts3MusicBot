@@ -309,7 +309,7 @@ class TS3Bot:
         for cmd_command in self.commands:
             for cmd_alias in cmd_command.alias:
                 if message.startswith(cmd_alias):
-                    command = cmd_command['command']
+                    command = cmd_command.command
                     alias = cmd_alias
                     break
             if command is not None:
@@ -505,11 +505,11 @@ class TS3Bot:
     def cmd_help(self, sender, *args):
         help_str = '[b][color=blue]食用方式[/color]\n'
         for command in self.commands:
-            if 'examples' in command.keys():
-                examples_str = '，'.join(command['examples'])
+            if command.example:
+                examples_str = '，'.join(command.example)
             else:
-                examples_str = '，'.join(command['alias'])
-            help_str += f"{command['help']}\t功能：{command['command']}\t指令：[color=green]{'，'.join(command['alias'])}[/color]\t例子：{examples_str}\n"
+                examples_str = '，'.join(command.alias)
+            help_str += f"{command.help}\t功能：{command.command}\t指令：[color=green]{'，'.join(command.alias)}[/color]\t例子：{examples_str}\n"
         self.send(help_str)
 
     # ========================================
