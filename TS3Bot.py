@@ -15,24 +15,25 @@ from apis.neteaseApi.NeteaseApi import NeteaseApi
 from apis.petApi.Pet import PetInfo
 from apis.petApi.PetApi import PetApi, BattleResult
 from apis.ttsApi.TTSApi import TTSApi
+from data_structures.Command import Command
 from data_structures.Sender import Sender
 from utils.logger import init_logger
 
-cmd_alias = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应ID歌曲到当前歌单并播放',
+my_commands = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应ID歌曲到当前歌单并播放',
               'examples': ["播放ID789798"]},
              {'command': 'add_id', 'alias': ["添加ID"], 'help': '添加对应ID歌曲到当前歌单',
               'examples': ["添加ID123456"]},
              {'command': 'play', 'alias': ["我想听", "我要听"], 'help': '自动搜索歌曲并添加到当前歌单',
               'examples': ["我想听爱情转移", "我要听爱情转移"]},
-             {'command': 'help', 'alias': ["帮助", "怎么玩"], 'help': '显示帮助手册', 'examples': ["帮助", "怎么玩"]},
-             {'command': 'chat', 'alias': ["聊天"], 'help': '喵~~', 'examples': ["聊天"]},
+             {'command': 'help', 'alias': ["帮助", "怎么玩"], 'help': '显示帮助手册'},
+             {'command': 'chat', 'alias': ["聊天"], 'help': '喵~~'},
              {'command': 'search', 'alias': ["搜索"], 'help': '搜索曲库歌曲', 'examples': ["搜索爱情转移"]},
-             {'command': 'pause', 'alias': ["暂停"], 'help': '暂停', 'examples': ["暂停"]},
+             {'command': 'pause', 'alias': ["暂停"], 'help': '暂停'},
              {'command': 'jump', 'alias': ["跳转"], 'help': '跳转到第N首歌曲', 'examples': ["跳转50"]},
              {'command': 'volume', 'alias': ["音量"], 'help': '调节音量。', 'examples': ["音量50"]},
-             {'command': 'clear', 'alias': ["清空"], 'help': '清空当前歌单', 'examples': ["清空"]},
-             {'command': 'next', 'alias': ["下一首"], 'help': '下一首', 'examples': ["下一首"]},
-             {'command': 'previous', 'alias': ["上一首"], 'help': '上一首', 'examples': ["上一首"]},
+             {'command': 'clear', 'alias': ["清空"], 'help': '清空当前歌单'},
+             {'command': 'next', 'alias': ["下一首"], 'help': '下一首'},
+             {'command': 'previous', 'alias': ["上一首"], 'help': '上一首'},
              {'command': 'remove_item_list', 'alias': ["删除歌曲", "歌单删除"], 'help': '删除对应歌单ID的第x首歌',
               'examples': ["歌单删除1 12"]},
              {'command': 'add_item_list', 'alias': ["歌单添加"], 'help': '给对应歌单ID添加歌曲',
@@ -41,11 +42,10 @@ cmd_alias = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应
               'examples': ["歌单添加0 11321,3213213"]},
              {'command': 'show_list', 'alias': ["当前歌单", "歌单", "查看歌单"], 'help': '查看当前歌单或其他歌单',
               'examples': ["当前歌单", "歌单[歌单ID]", "歌单123", "查看歌单789"]},
-             {'command': 'list_list', 'alias': ["所有歌单"], 'help': '查看所有歌单', 'examples': ["所有歌单"]},
+             {'command': 'list_list', 'alias': ["所有歌单"], 'help': '查看所有歌单'},
              {'command': 'play_list', 'alias': ["播放歌单"], 'help': '播放对应歌单ID', 'examples': ["播放歌单123"]},
              {'command': 'delete_list', 'alias': ["删除歌单"], 'help': '删除对应歌单ID', 'examples': ["删除歌单13456"]},
-             {'command': 'save_current_list', 'alias': ["保存歌单"], 'help': '保存当前播放歌单到新歌单',
-              'examples': ["保存歌单"]},
+             {'command': 'save_current_list', 'alias': ["保存歌单"], 'help': '保存当前播放歌单到新歌单'},
              {'command': 'add', 'alias': ["添加"], 'help': '自动搜索歌曲并添加到当前歌单',
               'examples': ["添加Lemon"]},
              {'command': 'play', 'alias': ["播放"], 'help': '自动搜索歌曲并插入到当前歌单并播放',
@@ -54,18 +54,15 @@ cmd_alias = [{'command': 'play_id', 'alias': ["播放ID"], 'help': '添加对应
               'examples': ["删除 12"]},
              {'command': 'pet_new', 'alias': ["创建宠物", "新建宠物"], 'help': '新建一只宠物。',
               'examples': ["创建宠物", "新建宠物"]},
-             {'command': 'pet_upgrade', 'alias': ["升级", "宠物升级"], 'help': '宠物升级。',
-              'examples': ["升级", "宠物升级"]},
-             {'command': 'pet_show', 'alias': ["宠物", "我的宠物", "查看宠物"], 'help': '查看宠物信息。',
-              'examples': ["宠物", "我的宠物", "查看宠物"]},
-             {'command': 'pet_delete', 'alias': ["删除宠物", "抛弃宠物"], 'help': '删除宠物。',
-              'examples': ["删除宠物", "抛弃宠物"]},
+             {'command': 'pet_upgrade', 'alias': ["升级", "宠物升级"], 'help': '宠物升级。'},
+             {'command': 'pet_show', 'alias': ["宠物", "我的宠物", "查看宠物"], 'help': '查看宠物信息。'},
+             {'command': 'pet_delete', 'alias': ["删除宠物", "抛弃宠物"], 'help': '删除宠物。'},
              {'command': 'pet_feed', 'alias': ["喂食", "喂食宠物", "喂宠物"], 'help': '喂宠物。',
               'examples': ["喂食", "喂食宠物", "喂宠物"]},
-             {'command': 'pet_battle_add', 'alias': ["加入战斗"], 'help': '宠物加入战斗。', 'examples': ["加入战斗"]},
-             {'command': 'pet_battle_list', 'alias': ["查看战斗", "战斗"], 'help': '宠物战斗。', 'examples': ["战斗"]},
-             {'command': 'pet_battle_start', 'alias': ["开始战斗"], 'help': '宠物开始战斗。', 'examples': ["开始战斗"]},
-             {'command': 'checkin', 'alias': ["签到"], 'help': '签到。', 'examples': ["签到"]},
+             {'command': 'pet_battle_add', 'alias': ["加入战斗"], 'help': '宠物加入战斗。'},
+             {'command': 'pet_battle_list', 'alias': ["查看战斗", "战斗"], 'help': '宠物战斗。'},
+             {'command': 'pet_battle_start', 'alias': ["开始战斗"], 'help': '宠物开始战斗。'},
+             {'command': 'checkin', 'alias': ["签到"], 'help': '签到。'},
              {'command': 'broadcast', 'alias': ["广播"], 'help': '广播。', 'examples': ["广播你好"]},
              {'command': 'update_apis', 'alias': ["刷新接口"], 'help': '刷新接口状态。'},
              {'command': 'show_apis', 'alias': ["接口"], 'help': '查看接口状态。'},
@@ -98,7 +95,7 @@ class TS3Bot:
         self.tts_api: Union[TTSApi, None] = None
         self.conn: Union[TS3Connection, None] = None
         self.chat_enable = False
-        self.ignore_users = ['serveradmin', 'ServerQuery', 'kpixaDUvjkJFc7BPXm1ULo5JR2M=']
+        self.ignore_users = ['serveradmin', 'ServerQuery', self.audio_bot_uid]
         self.sid = 1  # server id
         self.cid = 1  # channel id
         self.targetmode = 3  # 消息发送模式
@@ -108,6 +105,7 @@ class TS3Bot:
         self.prefix = "cmd_"
         self.hello = "Bot已上线。"
         self.logger = init_logger("TS3Bot")
+        self.commands:list[Command] = []
 
     def wait_event(self, timeout: int = 10):
         """ 等待事件 """
@@ -152,8 +150,19 @@ class TS3Bot:
         self.music_apis[api_id] = api_info
         self.logger.info(f"Register music api id: {api_id} priority: {priority}")
 
+    def register_commands(self,commands:Union[list[dict],dict,Command,list[Command]]):
+        if isinstance(commands,dict) or isinstance(commands,Command):
+            _commands = [commands]
+        else:
+            _commands = commands
+        for cmd in _commands:
+            if isinstance(cmd,dict):
+                self.commands.append(Command(**cmd))
+            if isinstance(cmd, Command):
+                self.commands.append(cmd)
+        return
+
     def check_apis_access(self):
-        self.logger.info("Check music apis accessibility.")
         for api_id, api_info in self.music_apis.items():
             api: MusicApi = api_info['api']
             response = api.available()
@@ -288,7 +297,6 @@ class TS3Bot:
         return
 
     def handle(self, event: TS3Event):
-        global cmd_alias
         parsed_event = event.parsed[0]
         self.logger.info(f"Received event: {parsed_event}")
         sender_name = parsed_event['invokername']
@@ -298,11 +306,11 @@ class TS3Bot:
         message: str = parsed_event['msg']
         command = None
         alias = None
-        for i in cmd_alias:
-            for a in i['alias']:
-                if message.startswith(a):
-                    command = i['command']
-                    alias = a
+        for cmd_command in self.commands:
+            for cmd_alias in cmd_command.alias:
+                if message.startswith(cmd_alias):
+                    command = cmd_command['command']
+                    alias = cmd_alias
                     break
             if command is not None:
                 break
@@ -349,7 +357,7 @@ class TS3Bot:
         name = song.name
         response = self.audio_bot_api.play(link)
         if not response.succeed:
-            self.error("播放错误QAQ")
+            self.error(response.reason)
             return
         self.music_api.current_insert(song)
         self.success(f"！！开始播放来自{singers}的{name}")
@@ -495,9 +503,8 @@ class TS3Bot:
     # 帮助cmd
 
     def cmd_help(self, sender, *args):
-        global cmd_alias
         help_str = '[b][color=blue]食用方式[/color]\n'
-        for command in cmd_alias:
+        for command in self.commands:
             if 'examples' in command.keys():
                 examples_str = '，'.join(command['examples'])
             else:
@@ -793,6 +800,8 @@ class TS3Bot:
             self.error(response.reason)
             return
         self.success("删除成功！")
+        if index == self.music_api.current_index:
+            self.audio_bot_api.stop()
         return
 
     def cmd_add_item_list(self, sender, *args):
