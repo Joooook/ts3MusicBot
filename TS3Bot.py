@@ -1,7 +1,7 @@
 import re
 import time
 import traceback
-from typing import Union
+from typing import Union,List,Dict
 
 import ts3
 from ts3.query import TS3Connection, TS3TimeoutError
@@ -105,7 +105,7 @@ class TS3Bot:
         self.prefix = "cmd_"
         self.hello = "Bot已上线。"
         self.logger = init_logger("TS3Bot")
-        self.commands:list[Command] = []
+        self.commands:List[Command] = []
 
     def wait_event(self, timeout: int = 10):
         """ 等待事件 """
@@ -150,7 +150,7 @@ class TS3Bot:
         self.music_apis[api_id] = api_info
         self.logger.info(f"Register music api id: {api_id} priority: {priority}")
 
-    def register_commands(self,commands:Union[list[dict],dict,Command,list[Command]]):
+    def register_commands(self,commands:Union[List[Dict],Dict,Command,List[Command]]):
         if isinstance(commands,dict) or isinstance(commands,Command):
             _commands = [commands]
         else:
@@ -884,7 +884,7 @@ class TS3Bot:
         if not response.succeed:
             self.error(response.reason)
             return
-        lists: dict[str, PlayList] = response.data
+        lists: Dict[str, PlayList] = response.data
         lists_info_str = "[b][color=blue]所有歌单[/color][/b]\n"
         for playlist_id, playlist in lists.items():
             lists_info_str += f"[b]ID：{playlist.id}\t歌曲数量：{len(playlist.songs)}[/b]\n"
