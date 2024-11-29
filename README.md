@@ -1,10 +1,10 @@
 # ts3MusicBot
-# 👋Introduction
+## 👋Introduction
 A simple python bot based on TS3AudioBot for teamspeak3.
 
 基于TS3AudioBot的简易teamspeak3机器人框架。
 
-# 🚩Features
+## 🚩Features
 - 🎵Basic Music Features
   - Play music.
   - Playlist management.
@@ -16,14 +16,14 @@ A simple python bot based on TS3AudioBot for teamspeak3.
 - Custom API
 - ....
 
-# ⚙️Installation
+## ⚙️Installation
 Make sure you have installed the [TS3AudioBot](https://github.com/Splamy/TS3AudioBot)   .
 ~~~bash
 git clone https://github.com/Joooook/ts3MusicBot
 pip install -r requirements.txt
 ~~~
 
-# ▶️Quick Start
+## ▶️Quick Start
 
 ~~~python
 from apis.muiscApi.MusicApi import MusicApi
@@ -45,23 +45,23 @@ if __name__ == '__main__':
   bot.tts_api = TTSApi(tts_api)
   bot.run()
 ~~~
-# ⚠️Notice
+## ⚠️Notice
 Although it comes with many basic features, this is not a ready-to-use project but more like a framework that requires further development, especially regarding the music API part.
 
 
-# 👉️Reference
+## 👉️Reference
 
 - [ZHANGTIANYAO1/TS3AudioBot-NetEaseCloudmusic-plugin](https://github.com/ZHANGTIANYAO1/TS3AudioBot-NetEaseCloudmusic-plugin)
 - [Splamy/TS3AudioBot](https://github.com/Splamy/TS3AudioBot)
 - [benediktschmitt/py-ts3](https://github.com/benediktschmitt/py-ts3)
 - [Binaryify/NeteaseCloudMusicApi](https://github.com/Binaryify/NeteaseCloudMusicApi)
 
-# 💭Murmurs
+## 💭Murmurs
 Initially, I used the project: [ZHANGTIANYAO1/TS3AudioBot-NetEaseCloudmusic-plugin](https://github.com/ZHANGTIANYAO1/TS3AudioBot-NetEaseCloudmusic-plugin). The fundamental reason for creating this bot was that the Netease API became unavailable due to certain unforeseen circumstances, which resulted in many songs being inaccessible. Fortunately, I decided to create my own solution. However, since there is no Python SDK available for TeamSpeak, I had to use the [pyts3](https://github.com/benediktschmitt/py-ts3) project to control the ServerQuery in conjunction with [Ts3AudioBot](https://github.com/Splamy/TS3AudioBot).
 
 This is just a humble attempt. As I am currently a student, updates to the wiki may be slower. I welcome any encouragement to update it more frequently.
 
-# 🧋Donate
+## 🧋Donate
 <a href="https://afdian.com/item/2a0e0cdcadf911ef9f725254001e7c00">
   <img src="https://s2.loli.net/2024/11/29/1JBxzphs7V6WcK9.jpg" width="300px">
 </a>
