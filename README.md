@@ -61,3 +61,8 @@ Initially, I used the project: [ZHANGTIANYAO1/TS3AudioBot-NetEaseCloudmusic-plug
 
 This is just a humble attempt. As I am currently a student, updates to the wiki may be slower. I welcome any encouragement to update it more frequently.
 
+# 🧋Donate
+<a href="https://afdian.com/item/2a0e0cdcadf911ef9f725254001e7c00">
+  <img src="https://s2.loli.net/2024/11/29/1JBxzphs7V6WcK9.jpg" width="300px">
+</a>
+
