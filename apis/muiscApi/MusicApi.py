@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from urllib.parse import urlencode
 from typing import Dict, Union, List
 import requests
+import random
 
 from apis.BaseApi import BaseApiResponse
 from apis.muiscApi.data import PlayList, Song, Album, Singer
@@ -246,8 +247,12 @@ class MusicApi(ABC):
             return MusicApiResponse.failure("还未开始播放。")
         return MusicApiResponse.success(self.playlists[self.current_list_id].songs[self.current_index])
 
-
-
+    @api
+    def shuffle(self):
+        if self.is_current_empty().data:
+            return MusicApiResponse.failure("当前歌单为空。")
+        random.shuffle(self.playlists[self.current_list_id].songs)
+        return MusicApiResponse.success()
 
 if __name__ == '__main__':
     print(MusicApi("https://xxx.com").search_songs("陈奕迅"))
