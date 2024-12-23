@@ -445,7 +445,7 @@ class TS3Bot:
         api_info_str = "[b][color=blue]接口状态[/color]\n"
         count = 1
         for api_id, api_info in sorted(self.music_apis.items(), key=lambda x: x[1]['priority'], reverse=True):
-            api_info_str += f"[{count}]\tId: {api_id}\tApiType: {api_info['api'].__class__.__name__}\tStatus: {'[color=green]Available[/color]' if api_info['accessibility'] else '[color=red]Unavailable[/color]'}\t"
+            api_info_str += f"[{count}]\tId: {api_id}\tApiType: {api_info['api'].__class__.__name__}\tPriority: {api_info['priority']}\tStatus: {'[color=green]Available[/color]' if api_info['accessibility'] else '[color=red]Unavailable[/color]'}\t"
             if api_id == self.current_music_api:
                 api_info_str += "\t<=正在使用"
             api_info_str += '\n'
@@ -471,6 +471,7 @@ class TS3Bot:
         self.success("修改成功。")
 
     def cmd_update_apis(self, sender, *args):
+        self.success("正在刷新中，请耐心等候...")
         self.update_music_api()
         self.success("刷新接口成功。")
         self.cmd_show_apis(sender)
@@ -614,27 +615,25 @@ class TS3Bot:
         if args[0] == '':
             return
         self.info("正在搜索中....")
-
-        if len(args) == 2:
+        size = 20
+        if len(args) >= 2:
             try:
-                size = int(args[1].strip())
+                size = int(args[-1].strip())
             except ValueError:
-                self.error("请输入正确的数字。")
-                return
-            response = self.music_api.search_songs(args[0], size=size)
-        else:
-            response = self.music_api.search_songs(args[0])
+                size = 20
+        keyword = ' '.join(args[:-1])
+        response = self.music_api.search_songs(keyword, size=size)
         if not response.succeed:
             self.error(response.reason)
             return
         songs = response.data
         if not songs:
-            response = self.music_api.get_suggest(args[0])
+            response = self.music_api.get_suggest(keyword)
             if not response.succeed:
                 self.error(response.reason)
             suggestions = response.data
             if suggestions:  # 如果suggest结果为非空则发送建议
-                self.info(f"没有搜到{args[0]}哦，建议你搜搜[b]{'，'.join(suggestions)}[b]")
+                self.info(f"没有搜到{keyword}哦，建议你搜搜[b]{'，'.join(suggestions)}[b]")
                 return
             else:
                 self.info("没有找到你想要的歌曲。")
