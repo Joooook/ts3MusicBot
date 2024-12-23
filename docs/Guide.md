@@ -299,7 +299,6 @@ from apis.ttsApi.TTSApi import TTSApi
 from TS3Bot import TS3Bot,my_commands
 if __name__ == '__main__':
     bot_api = "http://xxx.xxx.xxx.xxx:58913" # audioBot的web api地址，默认端口为58913
-    tts_api = "xxxx" # ttsapi的接口
     password= 'password' # admin serverquery的密码
     server_host = 'xxx.xxx.xxx.xxx' # ts3服务器地址
     bot = TS3Bot('serveradmin', password, bot_api, server_host)
