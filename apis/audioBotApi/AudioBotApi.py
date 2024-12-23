@@ -48,7 +48,7 @@ class AudioBotApi:
         if rep.status_code == 204:
             return AudioBotApiResponse.success()
         elif rep.status_code == 200:
-            AudioBotApiResponse.failure(f"未找到资源：{link}")
+            return AudioBotApiResponse.failure(f"未找到资源：{link}")
         return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
 
     @api
@@ -58,17 +58,19 @@ class AudioBotApi:
         if rep.status_code == 204:
             return AudioBotApiResponse.success()
         elif rep.status_code == 200:
-            AudioBotApiResponse.failure(f"未找到资源：{link}")
+            return AudioBotApiResponse.failure(f"未找到资源：{link}")
         return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
 
     @api
     def play(self, link: str = ''):
+        if link is None:
+            return AudioBotApiResponse.failure('链接获取失败')
         response = self.exec("play", link)
         rep: requests.models.Response = response.data
         if rep.status_code == 204:
             return AudioBotApiResponse.success()
         elif rep.status_code == 200:
-            AudioBotApiResponse.failure(f"未找到资源：{link}")
+            return AudioBotApiResponse.failure(f"未找到资源：{link}")
         return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
 
     @api

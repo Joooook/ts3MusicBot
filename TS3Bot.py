@@ -142,7 +142,9 @@ class TS3Bot:
         if self.music_api:
             self.register_music_api(self.music_api, "default")
         self.connect()
+        self.logger.info('Connected.')
         self.update_music_api()
+        self.logger.info('Updated music api.')
         self.listen()
 
     def register_music_api(self, music_api: MusicApi, api_id: str, priority: int = 100):
