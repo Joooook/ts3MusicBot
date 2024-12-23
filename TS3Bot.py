@@ -616,12 +616,13 @@ class TS3Bot:
             return
         self.info("正在搜索中....")
         size = 20
+        keyword = ' '.join(args)
         if len(args) >= 2:
             try:
                 size = int(args[-1].strip())
+                keyword = ' '.join(args[:-1])
             except ValueError:
                 size = 20
-        keyword = ' '.join(args[:-1])
         response = self.music_api.search_songs(keyword, size=size)
         if not response.succeed:
             self.error(response.reason)
