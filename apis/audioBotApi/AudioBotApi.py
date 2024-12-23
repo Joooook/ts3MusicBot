@@ -31,10 +31,13 @@ class AudioBotApi:
 
     @api
     def exec(self, *args, encode_all=True):
-        if encode_all:
-            urlencoded_args = map(lambda x: urllib.parse.quote(x, encoding='UTF-8', safe=''), args)
-        else:
-            urlencoded_args = map(lambda x: urllib.parse.quote(x, encoding='UTF-8'), args)
+        try:
+            if encode_all:
+                urlencoded_args = map(lambda x: urllib.parse.quote(x, encoding='UTF-8', safe=''), args)
+            else:
+                urlencoded_args = map(lambda x: urllib.parse.quote(x, encoding='UTF-8'), args)
+        except Exception as e:
+            return AudioBotApiResponse.failure("exec参数错误")
         url = self.url + f"/api/bot/use/{self.bot_id}/(/" + '/'.join(urlencoded_args)
         rep = requests.get(url)
         return AudioBotApiResponse.success(rep)
@@ -70,7 +73,7 @@ class AudioBotApi:
         if rep.status_code == 204:
             return AudioBotApiResponse.success()
         elif rep.status_code == 200:
-            return AudioBotApiResponse.failure(f"未找到资源：{link}")
+            return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code} 服务端响应内容：{rep.text}")
         return AudioBotApiResponse.failure(f"状态码错误：{rep.status_code}")
 
     @api
